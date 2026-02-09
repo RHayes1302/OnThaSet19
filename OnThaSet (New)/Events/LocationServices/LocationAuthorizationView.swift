@@ -9,7 +9,8 @@ import SwiftUI
 import CoreLocation
 
 struct LocationAuthorizationView: View {
-    @StateObject private var locationManager = LocationManager()
+    // USE SHARED LOCATION MANAGER
+    @ObservedObject var locationManager = LocationManager.shared
     @Binding var isPresented: Bool
     
     var body: some View {
@@ -73,15 +74,24 @@ struct LocationAuthorizationView: View {
                 
                 Spacer()
                 
-                
-                Button("Enable Location"){
+                // ENABLE LOCATION BUTTON
+                Button(action: {
+                    print("🔘 Enable Location button tapped")
                     locationManager.requestLocation()
-                        
-                    
+                    // Dismiss after permission request
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        isPresented = false
+                    }
+                }) {
+                    Text("Enable Location")
+                        .font(.headline.bold())
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.yellow)
+                        .cornerRadius(12)
                 }
-                
-                
-        
+                .padding(.horizontal, 40)
                 
                 // SKIP BUTTON
                 Button(action: {

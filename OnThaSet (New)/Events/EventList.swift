@@ -16,7 +16,6 @@ struct EventHomeView: View {
     
     @State private var viewMode: ViewMode
     @State private var selectedDate = Date()
-    @State private var showingAddSheet = false
 
     enum ViewMode {
         case list, calendar
@@ -87,21 +86,6 @@ struct EventHomeView: View {
                         .foregroundColor(.yellow)
                 }
             }
-            
-            // Existing Trailng Add Button
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingAddSheet = true }) {
-                    Image(systemName: "plus.diamond.fill") // Diamond shape like a road sign
-                        .foregroundColor(.yellow)
-                        .font(.title2)
-                }
-            }
-        }
-        .sheet(isPresented: $showingAddSheet) {
-            AddEditEventView(eventToEdit: Event(), onSave: { newEvent in
-                modelContext.insert(newEvent)
-                showingAddSheet = false
-            })
         }
     }
 }

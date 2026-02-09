@@ -10,7 +10,10 @@ import CoreLocation
 
 struct WeatherView: View {
     @StateObject private var weatherViewModel = WeatherViewModel()
-    @StateObject private var locationManager = LocationManager()
+    
+    // FIXED: Use shared LocationManager
+    @ObservedObject private var locationManager = LocationManager.shared
+    
     @Environment(\.dismiss) private var dismiss
     @State private var hasLoadedWeather = false
     
@@ -71,25 +74,44 @@ struct WeatherView: View {
                                 .font(.headline)
                                 .foregroundColor(.white)
                             
-                            Text("Please enable location services to see your local forecast")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 40)
-                            
-                            Button(action: {
-                                // Open Settings
-                                if let url = URL(string: UIApplication.openSettingsURLString) {
-                                    UIApplication.shared.open(url)
+                            if locationManager.authorizationStatus == .denied || locationManager.authorizationStatus == .restricted {
+                                Text("Please enable location services in Settings")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                                
+                                Button(action: {
+                                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                                        UIApplication.shared.open(url)
+                                    }
+                                }) {
+                                    Text("OPEN SETTINGS")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 10)
+                                        .background(Color.yellow)
+                                        .cornerRadius(5)
                                 }
-                            }) {
-                                Text("OPEN SETTINGS")
-                                    .font(.caption.bold())
-                                    .foregroundColor(.black)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(Color.yellow)
-                                    .cornerRadius(5)
+                            } else {
+                                Text("Requesting location...")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                                
+                                Button(action: {
+                                    locationManager.requestLocation()
+                                }) {
+                                    Text("ENABLE LOCATION")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 20)
+                                        .padding(.vertical, 10)
+                                        .background(Color.yellow)
+                                        .cornerRadius(5)
+                                }
                             }
                         }
                         .padding(.vertical, 40)
@@ -226,12 +248,14 @@ struct WeatherView: View {
         }
         .onAppear {
             // Request location when view appears
+            print("📍 WeatherView appeared - requesting location")
             locationManager.requestLocation()
         }
         .onChange(of: locationManager.userLocation) { oldLocation, newLocation in
             // Automatically fetch weather when location is available
             if let location = newLocation, !hasLoadedWeather {
                 hasLoadedWeather = true
+                print("✅ WeatherView: Location received, fetching weather")
                 Task {
                     await weatherViewModel.fetchWeatherByLocation(location)
                 }

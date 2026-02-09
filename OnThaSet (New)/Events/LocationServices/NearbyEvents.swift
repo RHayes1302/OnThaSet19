@@ -11,10 +11,13 @@ import SwiftData
 struct NearbyEventsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
-    @StateObject private var locationService = LocationManager()
+    
+    // USE SHARED LOCATION MANAGER (CRITICAL FIX!)
+    @ObservedObject var locationService = LocationManager.shared
+    
     @Query(sort: \Event.date) var allEvents: [Event]
     
-    @State private var searchRadius: Double = 50 // miles
+    @State private var searchRadius: Double = 100 // miles - UPDATED FROM 50
     @State private var timeFilter: TimeFilter = .nextMonth
 
     enum TimeFilter: String, CaseIterable {
@@ -27,16 +30,19 @@ struct NearbyEventsView: View {
     }
 
     var nearbyEvents: [Event] {
+        // DEBUG logging
+        print("🔍 NEARBY EVENTS FILTER:")
+        print("   Total events: \(allEvents.count)")
+        print("   Has location: \(locationService.userLocation != nil)")
+        print("   Auth status: \(locationService.authorizationStatus?.rawValue ?? -1)")
+        
         let filtered = allEvents.filter { event in
-            // Filter by location
             let isNearby = locationService.isNearby(event: event, radiusInMiles: searchRadius)
-            
-            // Filter by time
             let isInTimeRange = isEventInTimeRange(event)
-            
             return isNearby && isInTimeRange
         }
         
+        print("   ✅ Showing \(filtered.count) events")
         return filtered
     }
     
@@ -60,11 +66,10 @@ struct NearbyEventsView: View {
             return event.date <= monthFromNow
             
         case .all:
-            return true // All future events
+            return true
         }
     }
     
-    // Helper to check if event is within the next week
     private func isEventThisWeek(_ event: Event) -> Bool {
         let now = Date()
         let calendar = Calendar.current
@@ -106,7 +111,10 @@ struct NearbyEventsView: View {
                     
                     Spacer()
                     
-                    Button(action: { locationService.requestLocation() }) {
+                    Button(action: {
+                        print("🔄 Manual location refresh")
+                        locationService.requestLocation()
+                    }) {
                         Image(systemName: "arrow.clockwise")
                             .font(.title3)
                             .foregroundColor(.yellow)
@@ -114,6 +122,26 @@ struct NearbyEventsView: View {
                 }
                 .padding(.horizontal, 25)
                 .padding(.top, 10)
+                .padding(.bottom, 10)
+                
+                // DEBUG INFO (Remove after testing)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("DEBUG INFO")
+                        .font(.caption2.bold())
+                        .foregroundColor(.red)
+                    Text("Events: \(allEvents.count) | Location: \(locationService.userLocation != nil ? "✅" : "❌") | Auth: \(locationService.authorizationStatus?.rawValue ?? -1)")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                    if let loc = locationService.userLocation {
+                        Text("Coords: \(String(format: "%.4f", loc.coordinate.latitude)), \(String(format: "%.4f", loc.coordinate.longitude))")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+                }
+                .padding(8)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(8)
+                .padding(.horizontal)
                 .padding(.bottom, 10)
                 
                 // TIME FILTER
@@ -141,14 +169,15 @@ struct NearbyEventsView: View {
                 }
                 .padding(.bottom, 10)
                 
-                // RADIUS SELECTOR
+                // RADIUS SELECTOR - UPDATED WITH NEW OPTIONS
                 VStack(spacing: 8) {
-                    Text("Search Radius: \(Int(searchRadius)) miles")
+                    Text(searchRadius >= 9999 ? "Search Radius: MAX" : "Search Radius: \(Int(searchRadius)) miles")
                         .font(.caption.bold())
                         .foregroundColor(.yellow)
                     
-                    HStack(spacing: 12) {
-                        ForEach([25.0, 50.0, 100.0, 200.0], id: \.self) { radius in
+                    // First row: 100, 200, 300
+                    HStack(spacing: 8) {
+                        ForEach([100.0, 200.0, 300.0], id: \.self) { radius in
                             Button(action: { searchRadius = radius }) {
                                 Text("\(Int(radius))mi")
                                     .font(.caption.bold())
@@ -158,6 +187,32 @@ struct NearbyEventsView: View {
                                     .foregroundColor(searchRadius == radius ? .black : .white)
                                     .cornerRadius(15)
                             }
+                        }
+                    }
+                    
+                    // Second row: 400, 500, MAX
+                    HStack(spacing: 8) {
+                        ForEach([400.0, 500.0], id: \.self) { radius in
+                            Button(action: { searchRadius = radius }) {
+                                Text("\(Int(radius))mi")
+                                    .font(.caption.bold())
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(searchRadius == radius ? Color.yellow : Color.white.opacity(0.1))
+                                    .foregroundColor(searchRadius == radius ? .black : .white)
+                                    .cornerRadius(15)
+                            }
+                        }
+                        
+                        // MAX button (unlimited)
+                        Button(action: { searchRadius = 99999 }) {
+                            Text("MAX")
+                                .font(.caption.bold())
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(searchRadius >= 9999 ? Color.yellow : Color.white.opacity(0.1))
+                                .foregroundColor(searchRadius >= 9999 ? .black : .white)
+                                .cornerRadius(15)
                         }
                     }
                 }
@@ -200,7 +255,7 @@ struct NearbyEventsView: View {
                                     .cornerRadius(5)
                             }
                         } else {
-                            // Loading location
+                            // Loading location or not determined
                             ProgressView()
                                 .tint(.yellow)
                             
@@ -208,8 +263,19 @@ struct NearbyEventsView: View {
                                 .font(.headline)
                                 .foregroundColor(.gray)
                             
-                            Button(action: { locationService.requestLocation() }) {
-                                Text("RETRY")
+                            if locationService.authorizationStatus == .notDetermined {
+                                Text("Please allow location access when prompted")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 40)
+                            }
+                            
+                            Button(action: {
+                                print("🔄 Requesting location permission")
+                                locationService.requestLocation()
+                            }) {
+                                Text("ENABLE LOCATION")
                                     .font(.caption.bold())
                                     .foregroundColor(.black)
                                     .padding(.horizontal, 20)
@@ -222,7 +288,7 @@ struct NearbyEventsView: View {
                         Spacer()
                     }
                 } else if nearbyEvents.isEmpty {
-                    // Have location but no nearby events in time range
+                    // Have location but no nearby events
                     VStack(spacing: 20) {
                         Spacer()
                         Image(systemName: "mappin.and.ellipse")
@@ -233,24 +299,69 @@ struct NearbyEventsView: View {
                             .font(.headline)
                             .foregroundColor(.white)
                         
-                        Text("No events within \(Int(searchRadius)) miles in the \(timeFilter.displayName.lowercased()) timeframe")
+                        Text(searchRadius >= 9999 ? "No events in the \(timeFilter.displayName.lowercased()) timeframe" : "No events within \(Int(searchRadius)) miles in the \(timeFilter.displayName.lowercased()) timeframe")
                             .font(.subheadline)
                             .foregroundColor(.gray)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 40)
                         
-                        if let location = locationService.userLocation {
-                            Text("Your location: \(String(format: "%.2f", location.coordinate.latitude)), \(String(format: "%.2f", location.coordinate.longitude))")
-                                .font(.caption2)
-                                .foregroundColor(.gray.opacity(0.7))
+                        // Show event details for debugging
+                        if !allEvents.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Events in database:")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.yellow)
+                                
+                                ForEach(allEvents.prefix(3)) { event in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(event.title)
+                                            .font(.caption)
+                                            .foregroundColor(.white)
+                                        if event.latitude != 0 && event.longitude != 0 {
+                                            if let distance = locationService.distanceString(to: event) {
+                                                Text("Distance: \(distance)")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.gray)
+                                            }
+                                        } else {
+                                            Text("No location data")
+                                                .font(.caption2)
+                                                .foregroundColor(.red)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding()
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
                         }
                         
                         VStack(spacing: 12) {
-                            if searchRadius < 200 {
+                            // EXPAND BUTTON - FIXED
+                            if searchRadius < 99999 {
                                 Button(action: {
-                                    searchRadius = min(searchRadius * 2, 200)
+                                    if searchRadius == 100 {
+                                        searchRadius = 200
+                                    } else if searchRadius == 200 {
+                                        searchRadius = 300
+                                    } else if searchRadius == 300 {
+                                        searchRadius = 400
+                                    } else if searchRadius == 400 {
+                                        searchRadius = 500
+                                    } else {
+                                        searchRadius = 99999
+                                    }
                                 }) {
-                                    Text("EXPAND RADIUS TO \(Int(min(searchRadius * 2, 200))) MILES")
+                                    let nextRadius: String = {
+                                        if searchRadius == 100 { return "200" }
+                                        else if searchRadius == 200 { return "300" }
+                                        else if searchRadius == 300 { return "400" }
+                                        else if searchRadius == 400 { return "500" }
+                                        else { return "MAX" }
+                                    }()
+                                    
+                                    Text("EXPAND TO \(nextRadius) MILES")
                                         .font(.caption.bold())
                                         .foregroundColor(.black)
                                         .padding(.horizontal, 20)
@@ -264,7 +375,7 @@ struct NearbyEventsView: View {
                                 Button(action: {
                                     timeFilter = .all
                                 }) {
-                                    Text("SHOW ALL UPCOMING EVENTS")
+                                    Text("SHOW ALL UPCOMING")
                                         .font(.caption.bold())
                                         .foregroundColor(.black)
                                         .padding(.horizontal, 20)
@@ -273,16 +384,6 @@ struct NearbyEventsView: View {
                                         .cornerRadius(5)
                                 }
                             }
-                            
-                            Button(action: { locationService.requestLocation() }) {
-                                Text("REFRESH LOCATION")
-                                    .font(.caption.bold())
-                                    .foregroundColor(.black)
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(Color.yellow.opacity(0.5))
-                                    .cornerRadius(5)
-                            }
                         }
                         
                         Spacer()
@@ -290,7 +391,6 @@ struct NearbyEventsView: View {
                 } else {
                     // Show nearby events
                     VStack(spacing: 0) {
-                        // Event count header
                         HStack {
                             Text("\(nearbyEvents.count) event\(nearbyEvents.count == 1 ? "" : "s") found")
                                 .font(.caption.bold())
@@ -307,10 +407,10 @@ struct NearbyEventsView: View {
                         List {
                             ForEach(nearbyEvents) { event in
                                 NavigationLink(destination: EventDetailView(event: event)) {
-                                    // Highlighted event row for events this week
                                     HighlightedEventRow(
                                         event: event,
-                                        isHighlighted: isEventThisWeek(event)
+                                        isHighlighted: isEventThisWeek(event),
+                                        locationService: locationService
                                     )
                                 }
                                 .listRowBackground(Color.clear)
@@ -325,119 +425,9 @@ struct NearbyEventsView: View {
         }
         .navigationBarHidden(true)
         .onAppear {
+            print("📍 NearbyEventsView appeared")
             locationService.requestLocation()
         }
     }
 }
 
-// MARK: - Highlighted Event Row Component
-
-struct HighlightedEventRow: View {
-    let event: Event
-    let isHighlighted: Bool
-    
-    var body: some View {
-        HStack(spacing: 15) {
-            // Mini Flyer Thumbnail
-            if let data = event.imageData, let uiImage = UIImage(data: data) {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 80, height: 80)
-                    .cornerRadius(8)
-                    .clipped()
-                    .overlay(
-                        // "THIS WEEK" badge for highlighted events
-                        isHighlighted ?
-                        VStack {
-                            HStack {
-                                Text("THIS WEEK")
-                                    .font(.system(size: 8, weight: .black))
-                                    .foregroundColor(.black)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(Color.yellow)
-                                    .cornerRadius(4)
-                                Spacer()
-                            }
-                            Spacer()
-                        }
-                        .padding(4)
-                        : nil
-                    )
-            } else {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 80, height: 80)
-                    .overlay(Image(systemName: "music.note").foregroundColor(.yellow))
-            }
-            
-            VStack(alignment: .leading, spacing: 5) {
-                // Title with highlight indicator
-                HStack(spacing: 6) {
-                    if isHighlighted {
-                        Image(systemName: "star.fill")
-                            .font(.caption2)
-                            .foregroundColor(.yellow)
-                    }
-                    Text(event.title.uppercased())
-                        .font(.headline)
-                        .foregroundColor(isHighlighted ? .yellow : .white)
-                }
-                
-                // Date with special formatting for this week
-                HStack(spacing: 4) {
-                    Image(systemName: isHighlighted ? "calendar.badge.exclamationmark" : "calendar")
-                        .font(.caption2)
-                        .foregroundColor(isHighlighted ? .yellow : .gray)
-                    
-                    Text(event.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.subheadline)
-                        .foregroundColor(isHighlighted ? .yellow : .white)
-                }
-                
-                // Parse location to show venue name
-                let locationParts = event.locationName.split(separator: "|").map { String($0) }
-                if let venueName = locationParts.first {
-                    Label(venueName, systemImage: "mappin")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
-                } else {
-                    Label(event.locationName, systemImage: "mappin")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .lineLimit(1)
-                }
-            }
-            
-            Spacer()
-            
-            // Chevron with highlight color
-            Image(systemName: "chevron.right")
-                .foregroundColor(isHighlighted ? .yellow : .gray)
-        }
-        .padding()
-        .background(
-            Group {
-                if isHighlighted {
-                    // Highlighted background with yellow glow
-                    LinearGradient(
-                        colors: [Color.yellow.opacity(0.15), Color.yellow.opacity(0.05)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                } else {
-                    // Normal background
-                    Color.white.opacity(0.05)
-                }
-            }
-        )
-        .cornerRadius(12)
-        .overlay(
-            // Yellow border for highlighted events
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isHighlighted ? Color.yellow.opacity(0.5) : Color.clear, lineWidth: 2)
-        )
-    }
-}

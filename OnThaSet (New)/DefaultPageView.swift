@@ -14,10 +14,13 @@ struct DefaultPageView: View {
     @Query(sort: \Event.date) private var allEvents: [Event]
     @Query private var profiles: [UserProfile]
     
-    @StateObject private var locationManager = LocationManager()
-    @State private var showingLogin = false
+    @ObservedObject private var locationManager = LocationManager.shared
+    @StateObject private var storeManager = StoreKitManager()
+    
+    @State private var showingPaymentSheet = false
     @State private var showingLimitAlert = false
     @State private var navigateToPost = false
+    @State private var limitAlertMessage = ""
 
     var body: some View {
         NavigationStack {
@@ -82,19 +85,84 @@ struct DefaultPageView: View {
                                 makeMenuButton(text: "RIDE FORECAST")
                             }
                             .simultaneousGesture(TapGesture().onEnded {
-                                // Request location for auto-populated weather
                                 locationManager.requestLocation()
                             })
 
-                            // PROTECTED POST BUTTON
+                            // POST EVENT BUTTON - WITH PAYMENT & LIMITS
                             Button(action: {
                                 handlePostAttempt()
                             }) {
-                                makeMenuButton(text: "POST EVENT")
+                                VStack(spacing: 4) {
+                                    Text("POST EVENT")
+                                        .font(.headline.bold())
+                                    
+                                    // Show status
+                                    if let profile = profiles.first, profile.hasActiveSubscription {
+                                        let remaining = profile.remainingPosts()
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption2)
+                                            Text("\(remaining) post\(remaining == 1 ? "" : "s") remaining")
+                                                .font(.caption2.bold())
+                                        }
+                                        .foregroundColor(remaining > 0 ? .green : .orange)
+                                    } else {
+                                        Text("$3 per post or $9/month")
+                                            .font(.caption2)
+                                            .foregroundColor(.black.opacity(0.7))
+                                    }
+                                }
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.yellow)
+                                .cornerRadius(8)
                             }
 
                             NavigationLink(destination: AboutView()) {
                                 makeMenuButton(text: "ABOUT")
+                            }
+                            
+                            // 🆕 PROFILE/ACCOUNT BUTTON (moved below ABOUT)
+                            NavigationLink(destination: MyAccountView()) {
+                                HStack {
+                                    Image(systemName: "person.circle.fill")
+                                        .font(.title3)
+                                    Text("MY ACCOUNT")
+                                        .font(.headline.bold())
+                                }
+                                .foregroundColor(.yellow)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.yellow, lineWidth: 2)
+                                )
+                            }
+                            
+                            // 🔧 TEMPORARY DEBUG BUTTON - Remove after testing
+                            Button(action: {
+                                let testProfile = UserProfile(
+                                    appleUserID: "TEST_USER_123",
+                                    email: "test@test.com"
+                                )
+                                modelContext.insert(testProfile)
+                                do {
+                                    try modelContext.save()
+                                    print("✅ Test profile created!")
+                                } catch {
+                                    print("❌ Failed to create test profile: \(error)")
+                                }
+                            }) {
+                                Text("🔧 CREATE TEST PROFILE")
+                                    .font(.headline.bold())
+                                    .foregroundColor(.black)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 16)
+                                    .background(Color.red)
+                                    .cornerRadius(8)
                             }
                         }
                         .padding(.horizontal, 40)
@@ -111,25 +179,50 @@ struct DefaultPageView: View {
                         locationName: "",
                         details: "",
                         securityCode: "",
-                        price: "3.00",
+                        price: "0.00",  // No payment field - handled before this screen
                         latitude: 0.0,
-                        longitude: 0.0
+                        longitude: 0.0,
+                        postedByUserID: profiles.first?.appleUserID ?? "",
+                        postedByName: profiles.first?.displayName ?? ""
                     ),
                     onSave: { newEvent in
+                        // Set poster info if not already set
+                        if let profile = profiles.first {
+                            newEvent.postedByUserID = profile.appleUserID
+                            newEvent.postedByName = profile.displayName.isEmpty ? profile.email : profile.displayName
+                        }
+                        
                         modelContext.insert(newEvent)
-                        updatePostCount()
+                        
+                        // Update post count for subscribers
+                        if let profile = profiles.first, profile.hasActiveSubscription {
+                            profile.incrementPostCount()
+                        }
+                        
                         try? modelContext.save()
                     }
                 )
             }
         }
-        .sheet(isPresented: $showingLogin) {
-            LoginView()
+        .sheet(isPresented: $showingPaymentSheet) {
+            PaymentSelectionView(shouldNavigateToPost: $navigateToPost)
         }
-        .alert("Monthly Limit Reached", isPresented: $showingLimitAlert) {
+        .onChange(of: navigateToPost) { oldValue, newValue in
+            print("🔄 navigateToPost changed from \(oldValue) to \(newValue)")
+            if newValue {
+                print("✅ Should now navigate to AddEditEventView")
+            }
+        }
+        .alert("Post Limit Reached", isPresented: $showingLimitAlert) {
             Button("OK", role: .cancel) { }
         } message: {
-            Text("You have reached your limit of 4 posts this month.")
+            Text(limitAlertMessage)
+        }
+        .onAppear {
+            // Sync subscription status with StoreKit
+            if let profile = profiles.first {
+                profile.hasActiveSubscription = storeManager.hasActiveSubscription
+            }
         }
     }
 
@@ -137,33 +230,38 @@ struct DefaultPageView: View {
 
     func handlePostAttempt() {
         guard let profile = profiles.first else {
-            showingLogin = true
+            // No profile - shouldn't happen but handle gracefully
+            showingPaymentSheet = true
             return
         }
         
-        checkAndResetMonthlyCount(profile: profile)
+        // Sync subscription status with StoreKit
+        profile.hasActiveSubscription = storeManager.hasActiveSubscription
         
-        if profile.postsThisMonth >= 4 {
-            showingLimitAlert = true
-        } else {
+        // Check if user recently purchased a single post (consumable)
+        // Single posts are consumable, so they allow one immediate post
+        if storeManager.purchasedProductIDs.contains("com.onthaset.singlepost") {
+            // User just bought a single post - let them post immediately
             navigateToPost = true
+            return
         }
-    }
-
-    func checkAndResetMonthlyCount(profile: UserProfile) {
-        let calendar = Calendar.current
-        let currentMonth = calendar.component(.month, from: Date())
-        let lastPostMonth = calendar.component(.month, from: profile.lastPostDate ?? Date.distantPast)
         
-        if currentMonth != lastPostMonth {
-            profile.postsThisMonth = 0
-        }
-    }
-
-    func updatePostCount() {
-        if let profile = profiles.first {
-            profile.postsThisMonth += 1
-            profile.lastPostDate = Date()
+        // Check if user has active subscription
+        if profile.hasActiveSubscription {
+            // They have a subscription - check monthly limit
+            profile.checkAndResetMonthlyCount()
+            
+            if profile.postsThisMonth >= 4 {
+                // Hit monthly limit
+                limitAlertMessage = "You've used all 4 posts for this month. Your posts will reset on the 1st of next month."
+                showingLimitAlert = true
+            } else {
+                // Can post!
+                navigateToPost = true
+            }
+        } else {
+            // No subscription or single post - show payment options
+            showingPaymentSheet = true
         }
     }
 

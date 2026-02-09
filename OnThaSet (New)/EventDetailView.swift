@@ -93,6 +93,39 @@ struct EventDetailView: View {
                             .font(.title.bold())
                             .foregroundColor(.yellow)
                         
+                        // 🆕 POSTED BY SECTION
+                        if !event.postedByUserID.isEmpty {
+                            NavigationLink(destination: PostedByProfileView(userID: event.postedByUserID)) {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "person.circle.fill")
+                                        .font(.title3)
+                                        .foregroundColor(.yellow)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Posted by")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
+                                        Text(event.postedByName.isEmpty ? "Member" : event.postedByName)
+                                            .font(.subheadline.bold())
+                                            .foregroundColor(.yellow)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(.yellow.opacity(0.6))
+                                }
+                                .padding(12)
+                                .background(Color.white.opacity(0.05))
+                                .cornerRadius(10)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(Color.yellow.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                        }
+                        
                         Divider().background(Color.yellow.opacity(0.3))
                         
                         // Date & Time
@@ -154,15 +187,6 @@ struct EventDetailView: View {
                             Text(event.details)
                                 .foregroundColor(.white)
                                 .fixedSize(horizontal: false, vertical: true)
-                        }
-                        
-                        // Price
-                        HStack {
-                            Image(systemName: "dollarsign.circle.fill")
-                                .foregroundColor(.yellow)
-                            Text("Post Price: $\(event.price)")
-                                .foregroundColor(.gray)
-                                .font(.caption)
                         }
                     }
                     .padding()

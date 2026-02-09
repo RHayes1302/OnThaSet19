@@ -13,11 +13,11 @@ struct EventRow: View {
     
     var body: some View {
         HStack(spacing: 15) {
-            // ✅ MINI FLYER THUMBNAIL - SHOWS ENTIRE IMAGE
+            // MINI FLYER THUMBNAIL - SHOWS ENTIRE IMAGE
             if let data = event.imageData, let uiImage = UIImage(data: data) {
                 Image(uiImage: uiImage)
                     .resizable()
-                    .scaledToFit() // Changed from scaledToFill to scaledToFit
+                    .scaledToFit()
                     .frame(width: 80, height: 80)
                     .cornerRadius(8)
                     .clipped()

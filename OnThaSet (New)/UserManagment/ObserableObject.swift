@@ -10,11 +10,12 @@ import Foundation
 class AuthService: ObservableObject {
     @Published var currentUser: AppUser? = nil
     
-    // ADD THIS LINE: This tells the View if someone is logged in
+    // Check if someone is logged in
     var isLoggedIn: Bool {
         currentUser != nil
     }
     
+    // Password-based login (old method)
     func login(password: String) -> Bool {
         if password == "SetMember77" {
             currentUser = AppUser(id: UUID().uuidString, username: "Member", role: UserRole.member)
@@ -24,6 +25,15 @@ class AuthService: ObservableObject {
             return true
         }
         return false
+    }
+    
+    // Apple Sign In login (no password needed)
+    func loginWithApple(userID: String, email: String) {
+        currentUser = AppUser(
+            id: userID,
+            username: email.components(separatedBy: "@").first ?? "User",
+            role: .member
+        )
     }
     
     func logout() {

@@ -28,8 +28,6 @@ struct AddEditEventView: View {
     @State private var category: EventCategory = .community
     @State private var details: String = ""
     @State private var securityCode: String = ""
-    @State private var price: String = "3.00"
-    @State private var showPaymentAlert = false
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedImageData: Data?
     
@@ -51,8 +49,6 @@ struct AddEditEventView: View {
                     VStack(spacing: 25) {
                         flyerSection
                         formFields
-                        planSelectionSection
-                        paymentButtonsSection
                     }
                     .padding()
                 }
@@ -61,12 +57,6 @@ struct AddEditEventView: View {
             }
         }
         .navigationBarHidden(true)
-        .alert("Confirm Payment", isPresented: $showPaymentAlert) {
-            Button("I HAVE PAID") { saveData() }
-            Button("CANCEL", role: .cancel) { }
-        } message: {
-            Text("Confirm payment has been sent. Your post will be verified by the admin.")
-        }
         .onAppear { loadInitialData() }
         .onChange(of: selectedItem) { _, newItem in
             Task {
@@ -187,54 +177,7 @@ struct AddEditEventView: View {
                     .lineLimit(3...5)
                     .modifier(FormTextFieldStyle())
             }
-        }
-    }
-
-    private var planSelectionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("SELECT PLAN").font(.caption2.bold()).foregroundColor(.yellow)
-            HStack(spacing: 12) {
-                planBtn(label: "SINGLE POST", val: "3.00")
-                planBtn(label: "UNLIMITED MONTH", val: "10.00")
-            }
-        }
-    }
-
-    private func planBtn(label: String, val: String) -> some View {
-        Button(action: { price = val }) {
-            VStack {
-                Text(label).font(.system(size: 8, weight: .black))
-                Text("$\(val)").font(.headline.bold())
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(price == val ? Color.yellow : Color.white.opacity(0.1))
-            .foregroundColor(price == val ? .black : .white)
-            .cornerRadius(10)
-        }
-    }
-
-    private var paymentButtonsSection: some View {
-        VStack(spacing: 15) {
-            Text("PAYMENT METHOD").font(.caption2.bold()).foregroundColor(.yellow).frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 10) {
-                Button(action: { showPaymentAlert = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "applelogo")
-                            .font(.system(size: 16))
-                        Text("Pay")
-                            .font(.system(size: 19, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.white)
-                    .foregroundColor(.black)
-                    .cornerRadius(10)
-                }
-                
-                payBtn(label: "Venmo", color: Color(red: 0, green: 0.5, blue: 1)) { openURL("https://venmo.com/") }
-                payBtn(label: "Cash App", color: .green) { openURL("https://cash.app/") }
-            }
+            
             fieldContainer(label: "SECURITY PIN (REQUIRED)") {
                 TextField("4-digit pin", text: $securityCode)
                     .modifier(FormTextFieldStyle())
@@ -243,24 +186,12 @@ struct AddEditEventView: View {
         }
     }
 
-    private func payBtn(label: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .black))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(color)
-                .foregroundColor(.white)
-                .cornerRadius(10)
-        }
-    }
-
     private var submitButtonSection: some View {
         Button(action: {
-            print("Button tapped - Title: '\(title)', Code: '\(securityCode)'")
-            showPaymentAlert = true
+            print("✅ Posting event - Title: '\(title)', Code: '\(securityCode)'")
+            saveData()
         }) {
-            Text("CONFIRM & POST")
+            Text("POST EVENT")
                 .font(.headline.bold())
                 .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
@@ -277,10 +208,6 @@ struct AddEditEventView: View {
             Text(label).font(.caption2.bold()).foregroundColor(.yellow).padding(.leading, 5)
             content()
         }
-    }
-    
-    private func openURL(_ urlString: String) {
-        if let url = URL(string: urlString) { UIApplication.shared.open(url) }
     }
 
     // MARK: - Logic & Helpers
@@ -319,7 +246,6 @@ struct AddEditEventView: View {
             details = eventToEdit.details
             securityCode = eventToEdit.securityCode
             selectedImageData = eventToEdit.imageData
-            price = eventToEdit.price
         }
     }
 
@@ -335,9 +261,13 @@ struct AddEditEventView: View {
             let combinedLocation = "\(venueName)|\(streetAddress)|\(cityName)|\(stateName)|\(zipCode)"
             
             let finalEvent = Event(
-                title: title, date: date, category: category,
-                locationName: combinedLocation, details: details,
-                securityCode: securityCode, price: price,
+                title: title,
+                date: date,
+                category: category,
+                locationName: combinedLocation,
+                details: details,
+                securityCode: securityCode,
+                price: "",  // Payment handled before this screen
                 latitude: coordinate?.latitude ?? 0.0,
                 longitude: coordinate?.longitude ?? 0.0
             )

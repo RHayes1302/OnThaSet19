@@ -19,12 +19,16 @@ class Event {
     var securityCode: String
     var price: String
     
-    // ADD THIS LINE TO FIX THE ERROR
     var isFavorite: Bool = false
     
     @Attribute(.externalStorage) var imageData: Data?
     var latitude: Double
     var longitude: Double
+    
+    // 🆕 Track who posted the event
+    var postedByUserID: String = "" // Apple User ID of the person who posted
+    var postedByName: String = "" // Display name of the person who posted
+    var postedDate: Date = Date() // When it was posted
     
     init(
         title: String = "",
@@ -34,9 +38,11 @@ class Event {
         details: String = "",
         securityCode: String = "",
         price: String = "3.00",
-        isFavorite: Bool = false, // Add to initializer
+        isFavorite: Bool = false,
         latitude: Double = 0.0,
-        longitude: Double = 0.0
+        longitude: Double = 0.0,
+        postedByUserID: String = "",
+        postedByName: String = ""
     ) {
         self.title = title
         self.date = date
@@ -48,6 +54,9 @@ class Event {
         self.isFavorite = isFavorite
         self.latitude = latitude
         self.longitude = longitude
+        self.postedByUserID = postedByUserID
+        self.postedByName = postedByName
+        self.postedDate = Date()
     }
     
     // Helper for displaying the image

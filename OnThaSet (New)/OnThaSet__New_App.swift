@@ -19,6 +19,7 @@ struct OnThaSetApp: App {
                     .environmentObject(authService)
             }
         }
-        .modelContainer(for: [Event.self, UserProfile.self])
+        // 🆕 Added EventPhoto and BikeProgress models
+        .modelContainer(for: [Event.self, UserProfile.self, EventPhoto.self, BikeProgress.self])
     }
 }
