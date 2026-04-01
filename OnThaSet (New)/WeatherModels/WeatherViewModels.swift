@@ -5,7 +5,6 @@
 //  Created by Ramone Hayes on 1/16/26.
 //
 
-
 import SwiftUI
 import CoreLocation
 
@@ -19,76 +18,80 @@ class WeatherViewModel: ObservableObject {
     @Published var rideSafetyColor: Color = .green
     @Published var errorMessage: String = ""
 
+    // REAL-TIME current conditions
+    @Published var currentTemp: String = ""
+    @Published var currentWindSpeed: String = ""
+    @Published var currentWeatherCode: Int = 0
+
     func searchWeather() async {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            print("❌ Search query is empty")
-            return
-        }
-        
-        print("🔍 Searching weather for: '\(query)'")
+        guard !query.isEmpty else { return }
+
         self.isLoading = true
         self.errorMessage = ""
-        
+
         let encodedCity = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let geocodingURL = "https://geocoding-api.open-meteo.com/v1/search?name=\(encodedCity)&count=1"
-        
-        print("🌐 Geocoding URL: \(geocodingURL)")
-        
+
         do {
-            guard let gUrl = URL(string: geocodingURL) else {
-                print("❌ Invalid geocoding URL")
-                self.isLoading = false
-                return
-            }
-            
+            guard let gUrl = URL(string: geocodingURL) else { self.isLoading = false; return }
             let (gData, _) = try await URLSession.shared.data(from: gUrl)
-            print("✅ Geocoding response received")
-            
             let gResult = try JSONDecoder().decode(GeocodingResponse.self, from: gData)
-            
+
             if let location = gResult.results?.first {
-                print("📍 Found location: \(location.name) at \(location.latitude), \(location.longitude)")
-                
-                let weatherURL = "https://api.open-meteo.com/v1/forecast?latitude=\(location.latitude)&longitude=\(location.longitude)&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto&temperature_unit=fahrenheit&windspeed_unit=mph"
-                
-                print("🌐 Weather URL: \(weatherURL)")
-                
-                guard let wUrl = URL(string: weatherURL) else {
-                    print("❌ Invalid weather URL")
-                    self.isLoading = false
-                    return
-                }
-                
-                let (wData, _) = try await URLSession.shared.data(from: wUrl)
-                print("✅ Weather response received")
-                
-                let wResult = try JSONDecoder().decode(ForecastResponse.self, from: wData)
-                print("✅ Weather decoded successfully")
-                
-                self.parseWeather(wResult, name: location.name)
-                print("✅ Weather parsed and displayed")
+                await fetchWeatherData(lat: location.latitude, lng: location.longitude, name: location.name)
             } else {
-                print("❌ No location found for: \(query)")
                 self.errorMessage = "Location not found"
             }
         } catch {
-            print("❌ Weather error: \(error.localizedDescription)")
-            print("❌ Full error: \(error)")
             self.errorMessage = "Failed to load weather"
         }
-        
+
         self.isLoading = false
-        print("🏁 Search complete. City: '\(self.cityName)', Forecasts: \(self.dailyForecasts.count)")
+    }
+
+    func searchWeatherByCoordinates(latitude: Double, longitude: Double, locationName: String) async {
+        self.isLoading = true
+        self.errorMessage = ""
+        await fetchWeatherData(lat: latitude, lng: longitude, name: locationName)
+        self.isLoading = false
+    }
+
+    func fetchWeatherByLocation(_ location: CLLocation) async {
+        self.isLoading = true
+        self.errorMessage = ""
+        let geocoder = CLGeocoder()
+        var cityLabel = "Your Location"
+        if let placemark = try? await geocoder.reverseGeocodeLocation(location).first {
+            cityLabel = placemark.locality ?? placemark.administrativeArea ?? "Your Location"
+        }
+        await fetchWeatherData(lat: location.coordinate.latitude, lng: location.coordinate.longitude, name: cityLabel)
+        self.isLoading = false
+    }
+
+    private func fetchWeatherData(lat: Double, lng: Double, name: String) async {
+        let weatherURL = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lng)&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto&temperature_unit=fahrenheit&windspeed_unit=mph"
+
+        do {
+            guard let wUrl = URL(string: weatherURL) else { return }
+            let (wData, _) = try await URLSession.shared.data(from: wUrl)
+            let wResult = try JSONDecoder().decode(ForecastResponse.self, from: wData)
+            self.parseWeather(wResult, name: name)
+        } catch {
+            self.errorMessage = "Failed to load weather"
+        }
     }
 
     private func parseWeather(_ result: ForecastResponse, name: String) {
         self.cityName = name
+
+        // REAL-TIME current conditions
         let current = result.current_weather
-        
-        print("🌡️ Current temp: \(current.temperature)°F, Wind: \(current.windspeed) mph")
-        
-        // Ride Safety Logic
+        self.currentTemp = "\(Int(current.temperature))°F"
+        self.currentWindSpeed = "\(Int(current.windspeed)) mph"
+        self.currentWeatherCode = current.weathercode
+
+        // Ride Safety
         if current.windspeed > 20 {
             rideSafetyMessage = "DANGEROUS WINDS: HIGH RISK"
             rideSafetyColor = .red
@@ -110,7 +113,6 @@ class WeatherViewModel: ObservableObject {
             ))
         }
         self.dailyForecasts = forecasts
-        print("📊 Created \(forecasts.count) daily forecasts")
     }
 
     private func formatDate(_ dateStr: String) -> String {
@@ -121,7 +123,7 @@ class WeatherViewModel: ObservableObject {
         return formatter.string(from: date).uppercased()
     }
 
-    private func mapWeatherCode(_ code: Int) -> String {
+    func mapWeatherCode(_ code: Int) -> String {
         switch code {
         case 0: return "sun.max.fill"
         case 1, 2, 3: return "cloud.sun.fill"
@@ -139,48 +141,8 @@ class WeatherViewModel: ObservableObject {
         rideSafetyMessage = ""
         rideSafetyColor = .green
         errorMessage = ""
-    }
-    
-    func searchWeatherByCoordinates(latitude: Double, longitude: Double, locationName: String) async {
-        print("🎯 Searching weather by GPS: \(latitude), \(longitude)")
-        self.isLoading = true
-        self.errorMessage = ""
-        self.cityName = locationName
-        
-        let weatherURL = "https://api.open-meteo.com/v1/forecast?latitude=\(latitude)&longitude=\(longitude)&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto&temperature_unit=fahrenheit&windspeed_unit=mph"
-        
-        do {
-            guard let wUrl = URL(string: weatherURL) else {
-                self.isLoading = false
-                return
-            }
-            let (wData, _) = try await URLSession.shared.data(from: wUrl)
-            let wResult = try JSONDecoder().decode(ForecastResponse.self, from: wData)
-            self.parseWeather(wResult, name: locationName)
-        } catch {
-            print("❌ Weather error: \(error.localizedDescription)")
-            self.errorMessage = "Failed to load weather"
-        }
-        
-        self.isLoading = false
-    }
-    
-    func fetchWeatherByLocation(_ location: CLLocation) async {
-        let geocoder = CLGeocoder()
-        do {
-            let placemarks = try await geocoder.reverseGeocodeLocation(location)
-            let cityName = placemarks.first?.locality ?? "Your Location"
-            await searchWeatherByCoordinates(
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                locationName: cityName
-            )
-        } catch {
-            await searchWeatherByCoordinates(
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude,
-                locationName: "Your Location"
-            )
-        }
+        currentTemp = ""
+        currentWindSpeed = ""
+        currentWeatherCode = 0
     }
 }

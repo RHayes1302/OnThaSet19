@@ -13,14 +13,20 @@ struct DefaultPageView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Event.date) private var allEvents: [Event]
     @Query private var profiles: [UserProfile]
-    
+
     @ObservedObject private var locationManager = LocationManager.shared
     @StateObject private var storeManager = StoreKitManager()
-    
+
     @State private var showingPaymentSheet = false
     @State private var showingLimitAlert = false
     @State private var navigateToPost = false
     @State private var limitAlertMessage = ""
+    @State private var showingAdminLock = false
+    @State private var secretTapCount = 0
+    @State private var showingAbout = false
+    @State private var showingPrivacyPolicy = false
+    @State private var showingTerms = false
+    @State private var showingExtraPostSheet = false
 
     var body: some View {
         NavigationStack {
@@ -29,32 +35,29 @@ struct DefaultPageView: View {
 
                 ScrollView {
                     VStack(spacing: 30) {
-                        
-                        // 1. BRANDED HIGHWAY SHIELD HEADER
+
+                        // BRANDED SHIELD HEADER
                         VStack(spacing: 0) {
                             ZStack {
                                 Image(systemName: "shield.fill")
                                     .font(.system(size: 85))
                                     .foregroundColor(.yellow)
-                                
                                 VStack(spacing: -2) {
-                                    Text("ON")
-                                        .font(.system(size: 15, weight: .black))
-                                        .foregroundColor(.black)
-                                    Text("THA")
-                                        .font(.system(size: 12, weight: .black))
-                                        .foregroundColor(.black)
-                                    Text("SET")
-                                        .font(.system(size: 20, weight: .black))
-                                        .foregroundColor(.black)
+                                    Text("ON").font(.system(size: 15, weight: .black)).foregroundColor(.black)
+                                    Text("THA").font(.system(size: 12, weight: .black)).foregroundColor(.black)
+                                    Text("SET").font(.system(size: 20, weight: .black)).foregroundColor(.black)
                                 }
                                 .offset(y: -4)
+                            }
+                            .onTapGesture(count: 5) {
+                                showingAdminLock = true
+                                secretTapCount = 0
                             }
                         }
                         .padding(.top, 50)
                         .padding(.bottom, 10)
 
-                        // 2. LOGO PLACEHOLDER (Always visible)
+                        // LOGO
                         Image("ONTHASET")
                             .resizable()
                             .scaledToFill()
@@ -66,9 +69,12 @@ struct DefaultPageView: View {
                             .font(.title2.bold())
                             .foregroundColor(.yellow)
 
-                        // 3. ACTION BUTTONS
+                        // LIVE AD BANNER
+                        LiveAdStripView()
+
+                        // ACTION BUTTONS
                         VStack(spacing: 12) {
-                            
+
                             NavigationLink(destination: EventHomeView(initialMode: .list)) {
                                 makeMenuButton(text: "VIEW POSTED EVENTS")
                             }
@@ -79,8 +85,29 @@ struct DefaultPageView: View {
                             .simultaneousGesture(TapGesture().onEnded {
                                 locationManager.requestLocation()
                             })
-                            
-                            // NEW: WEATHER FORECAST BUTTON
+
+                            // NATIONAL RUN CALENDAR
+                            NavigationLink(destination: NationalRunCalendarView()) {
+                                HStack {
+                                    Image(systemName: "map.fill").font(.title3)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("NATIONAL RUN CALENDAR")
+                                            .font(.headline.bold())
+                                        Text("Rallies • Annuals • Unity Runs • Charity")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .opacity(0.8)
+                                    }
+                                    Spacer()
+                                    Text("🗺️").font(.title3)
+                                }
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .padding(.horizontal, 16)
+                                .background(Color.yellow)
+                                .cornerRadius(8)
+                            }
+
                             NavigationLink(destination: WeatherView()) {
                                 makeMenuButton(text: "RIDE FORECAST")
                             }
@@ -88,26 +115,20 @@ struct DefaultPageView: View {
                                 locationManager.requestLocation()
                             })
 
-                            // POST EVENT BUTTON - WITH PAYMENT & LIMITS
-                            Button(action: {
-                                handlePostAttempt()
-                            }) {
+                            // POST EVENT BUTTON
+                            Button(action: { handlePostAttempt() }) {
                                 VStack(spacing: 4) {
-                                    Text("POST EVENT")
-                                        .font(.headline.bold())
-                                    
-                                    // Show status
+                                    Text("POST EVENT").font(.headline.bold())
                                     if let profile = profiles.first, profile.hasActiveSubscription {
                                         let remaining = profile.remainingPosts()
                                         HStack(spacing: 4) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.caption2)
+                                            Image(systemName: "checkmark.circle.fill").font(.caption2)
                                             Text("\(remaining) post\(remaining == 1 ? "" : "s") remaining")
                                                 .font(.caption2.bold())
                                         }
                                         .foregroundColor(remaining > 0 ? .green : .orange)
                                     } else {
-                                        Text("$3 per post or $9/month")
+                                        Text("$0.99 per post or $2.99/month")
                                             .font(.caption2)
                                             .foregroundColor(.black.opacity(0.7))
                                     }
@@ -119,17 +140,18 @@ struct DefaultPageView: View {
                                 .cornerRadius(8)
                             }
 
-                            NavigationLink(destination: AboutView()) {
-                                makeMenuButton(text: "ABOUT")
-                            }
-                            
-                            // 🆕 PROFILE/ACCOUNT BUTTON (moved below ABOUT)
-                            NavigationLink(destination: MyAccountView()) {
+                            // MY ACCOUNT
+                            NavigationLink(destination: MyAccountView()
+                                .navigationBarBackButtonHidden(true)
+                                .toolbar {
+                                    ToolbarItem(placement: .navigationBarLeading) {
+                                        EmptyView()
+                                    }
+                                }
+                            ) {
                                 HStack {
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.title3)
-                                    Text("MY ACCOUNT")
-                                        .font(.headline.bold())
+                                    Image(systemName: "person.circle.fill").font(.title3)
+                                    Text("MY ACCOUNT").font(.headline.bold())
                                 }
                                 .foregroundColor(.yellow)
                                 .frame(maxWidth: .infinity)
@@ -141,32 +163,78 @@ struct DefaultPageView: View {
                                         .stroke(Color.yellow, lineWidth: 2)
                                 )
                             }
-                            
-                            // 🔧 TEMPORARY DEBUG BUTTON - Remove after testing
-                            Button(action: {
-                                let testProfile = UserProfile(
-                                    appleUserID: "TEST_USER_123",
-                                    email: "test@test.com"
-                                )
-                                modelContext.insert(testProfile)
-                                do {
-                                    try modelContext.save()
-                                    print("✅ Test profile created!")
-                                } catch {
-                                    print("❌ Failed to create test profile: \(error)")
+                        }
+                        .padding(.horizontal, 40)
+
+                        // ADVERTISE WITH US — premium glowing banner
+                        NavigationLink(destination: AdvertiserSignupView()) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.black)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.yellow, lineWidth: 2)
+                                    )
+                                    .shadow(color: .yellow.opacity(0.5), radius: 12)
+
+                                HStack(spacing: 14) {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "megaphone.fill")
+                                                .foregroundColor(.yellow).font(.title2)
+                                            Text("ADVERTISE WITH US")
+                                                .font(.headline.bold()).foregroundColor(.yellow)
+                                        }
+                                        Text("Reach thousands of riders across the community")
+                                            .font(.caption).foregroundColor(.gray)
+                                        HStack(spacing: 4) {
+                                            Text("Plans from")
+                                                .font(.caption2).foregroundColor(.gray)
+                                            Text("$19.99/mo")
+                                                .font(.caption2.bold()).foregroundColor(.yellow)
+                                            Text("•")
+                                                .font(.caption2).foregroundColor(.gray)
+                                            Text("Basic")
+                                                .font(.caption2).foregroundColor(.gray)
+                                            Text("⭐ Featured")
+                                                .font(.caption2).foregroundColor(.orange)
+                                            Text("👑 Premium")
+                                                .font(.caption2).foregroundColor(.yellow)
+                                        }
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.yellow).font(.title3.bold())
                                 }
-                            }) {
-                                Text("🔧 CREATE TEST PROFILE")
-                                    .font(.headline.bold())
-                                    .foregroundColor(.black)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 16)
-                                    .background(Color.red)
-                                    .cornerRadius(8)
+                                .padding(.horizontal, 20).padding(.vertical, 16)
                             }
+                            .frame(maxWidth: .infinity)
                         }
                         .padding(.horizontal, 40)
                         .padding(.bottom, 40)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(action: { showingAbout = true }) {
+                            Label("About On Tha Set", systemImage: "info.circle")
+                        }
+                        Button(action: { showingPrivacyPolicy = true }) {
+                            Label("Privacy Policy", systemImage: "hand.raised")
+                        }
+                        Button(action: { showingTerms = true }) {
+                            Label("Terms of Service", systemImage: "doc.text")
+                        }
+                        Button(action: { contactUs() }) {
+                            Label("Contact Us", systemImage: "envelope")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundColor(.yellow)
+                            .font(.title3)
                     }
                 }
             }
@@ -179,26 +247,23 @@ struct DefaultPageView: View {
                         locationName: "",
                         details: "",
                         securityCode: "",
-                        price: "0.00",  // No payment field - handled before this screen
+                        price: "0.00",
                         latitude: 0.0,
                         longitude: 0.0,
                         postedByUserID: profiles.first?.appleUserID ?? "",
                         postedByName: profiles.first?.displayName ?? ""
                     ),
                     onSave: { newEvent in
-                        // Set poster info if not already set
                         if let profile = profiles.first {
                             newEvent.postedByUserID = profile.appleUserID
-                            newEvent.postedByName = profile.displayName.isEmpty ? profile.email : profile.displayName
+                            newEvent.postedByName = profile.displayName.isEmpty
+                                ? profile.email
+                                : profile.displayName
                         }
-                        
                         modelContext.insert(newEvent)
-                        
-                        // Update post count for subscribers
                         if let profile = profiles.first, profile.hasActiveSubscription {
                             profile.incrementPostCount()
                         }
-                        
                         try? modelContext.save()
                     }
                 )
@@ -207,11 +272,23 @@ struct DefaultPageView: View {
         .sheet(isPresented: $showingPaymentSheet) {
             PaymentSelectionView(shouldNavigateToPost: $navigateToPost)
         }
+        .sheet(isPresented: $showingAdminLock) {
+            AdminLockView()
+        }
+        .sheet(isPresented: $showingAbout) {
+            AboutView()
+        }
+        .sheet(isPresented: $showingPrivacyPolicy) {
+            PrivacyPolicyView()
+        }
+        .sheet(isPresented: $showingTerms) {
+            TermsOfServiceView()
+        }
+        .sheet(isPresented: $showingExtraPostSheet) {
+            ExtraPostPurchaseView(shouldNavigateToPost: $navigateToPost)
+        }
         .onChange(of: navigateToPost) { oldValue, newValue in
             print("🔄 navigateToPost changed from \(oldValue) to \(newValue)")
-            if newValue {
-                print("✅ Should now navigate to AddEditEventView")
-            }
         }
         .alert("Post Limit Reached", isPresented: $showingLimitAlert) {
             Button("OK", role: .cancel) { }
@@ -219,48 +296,39 @@ struct DefaultPageView: View {
             Text(limitAlertMessage)
         }
         .onAppear {
-            // Sync subscription status with StoreKit
             if let profile = profiles.first {
                 profile.hasActiveSubscription = storeManager.hasActiveSubscription
+            }
+            Task {
+                await SupabaseManager.shared.fetchActiveAds()
             }
         }
     }
 
-    // MARK: - Logic Helpers
+    func contactUs() {
+        if let url = URL(string: "mailto:contact.onthaset@gmail.com?subject=On%20Tha%20Set%20Inquiry") {
+            UIApplication.shared.open(url)
+        }
+    }
 
     func handlePostAttempt() {
         guard let profile = profiles.first else {
-            // No profile - shouldn't happen but handle gracefully
             showingPaymentSheet = true
             return
         }
-        
-        // Sync subscription status with StoreKit
         profile.hasActiveSubscription = storeManager.hasActiveSubscription
-        
-        // Check if user recently purchased a single post (consumable)
-        // Single posts are consumable, so they allow one immediate post
         if storeManager.purchasedProductIDs.contains("com.onthaset.singlepost") {
-            // User just bought a single post - let them post immediately
             navigateToPost = true
             return
         }
-        
-        // Check if user has active subscription
         if profile.hasActiveSubscription {
-            // They have a subscription - check monthly limit
             profile.checkAndResetMonthlyCount()
-            
             if profile.postsThisMonth >= 4 {
-                // Hit monthly limit
-                limitAlertMessage = "You've used all 4 posts for this month. Your posts will reset on the 1st of next month."
-                showingLimitAlert = true
+                showingExtraPostSheet = true
             } else {
-                // Can post!
                 navigateToPost = true
             }
         } else {
-            // No subscription or single post - show payment options
             showingPaymentSheet = true
         }
     }

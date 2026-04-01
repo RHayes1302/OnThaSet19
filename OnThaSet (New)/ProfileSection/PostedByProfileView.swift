@@ -6,47 +6,42 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct PostedByProfileView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var allProfiles: [UserProfile]
-    
     let userID: String
-    
-    private var profile: UserProfile? {
-        allProfiles.first { $0.appleUserID == userID }
-    }
-    
+    let posterName: String
+
     var body: some View {
-        Group {
-            if let profile = profile {
-                // Show the user's public profile
-                PublicProfileView(profile: profile)
-            } else {
-                // Profile not found
-                ZStack {
-                    Color.black.ignoresSafeArea()
-                    
-                    VStack(spacing: 20) {
-                        Image(systemName: "person.crop.circle.badge.questionmark")
-                            .font(.system(size: 80))
-                            .foregroundColor(.gray)
-                        
-                        Text("Profile Not Found")
-                            .font(.title2.bold())
-                            .foregroundColor(.white)
-                        
-                        Text("This user's profile is not available.")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                }
-                .navigationTitle("Profile")
-                .navigationBarTitleDisplayMode(.inline)
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 24) {
+
+                Spacer()
+
+                Image(systemName: "person.circle.fill")
+                    .font(.system(size: 100))
+                    .foregroundColor(.yellow)
+
+                Text(posterName.isEmpty ? "Community Member" : posterName)
+                    .font(.title.bold())
+                    .foregroundColor(.white)
+
+                Text("Rider ID: \(userID.prefix(8))...")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+
+                Spacer()
+
+                Text("Full rider profiles are coming soon.")
+                    .font(.subheadline)
+                    .foregroundColor(.gray)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 40)
             }
         }
+        .navigationTitle("Posted By")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

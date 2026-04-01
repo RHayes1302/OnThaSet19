@@ -7,18 +7,17 @@
 
 import SwiftUI
 
-// Weather View that uses GPS coordinates directly (most accurate!)
 struct WeatherViewForCoordinates: View {
     let latitude: Double
     let longitude: Double
     let locationName: String
-    
+
     @StateObject private var weatherViewModel = WeatherViewModel()
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            
+
             // BACKGROUND
             Color.clear
                 .background {
@@ -26,7 +25,6 @@ struct WeatherViewForCoordinates: View {
                         Image("Road")
                             .resizable()
                             .aspectRatio(contentMode: .fill)
-                        
                         Color.black.opacity(0.5)
                     }
                     .ignoresSafeArea()
@@ -36,7 +34,7 @@ struct WeatherViewForCoordinates: View {
             // MAIN CONTENT
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 25) {
-                    
+
                     // LOGO
                     ZStack {
                         Image(systemName: "shield.fill").font(.system(size: 80)).foregroundColor(.yellow)
@@ -46,22 +44,27 @@ struct WeatherViewForCoordinates: View {
                             Text("SET").font(.system(size: 15, weight: .black))
                         }.foregroundColor(.black).offset(y: -4)
                     }
-                    .padding(.top, 60)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 70)
 
                     // TITLE
                     Text("Ride Forecast")
                         .font(.system(size: 48, weight: .black, design: .serif))
                         .foregroundStyle(.white)
                         .shadow(radius: 5)
-                    
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .multilineTextAlignment(.center)
+
                     // LOCATION NAME
                     Text(locationName.uppercased())
                         .font(.title3.bold())
                         .foregroundColor(.yellow)
-                    
-                    Text("📍 GPS: \(latitude, specifier: "%.4f"), \(longitude, specifier: "%.4f")")
+                        .frame(maxWidth: .infinity, alignment: .center)
+
+                    Text("📍 Event Location")
                         .font(.caption2)
                         .foregroundColor(.gray)
+                        .frame(maxWidth: .infinity, alignment: .center)
 
                     // RIDE SAFETY BANNER
                     if !weatherViewModel.rideSafetyMessage.isEmpty {
@@ -86,49 +89,52 @@ struct WeatherViewForCoordinates: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal)
                     }
-                    
-                    // CURRENT CONDITIONS
-                    if !weatherViewModel.dailyForecasts.isEmpty {
-                        VStack(spacing: 15) {
-                            Text("CURRENT CONDITIONS")
+
+                    // RIGHT NOW CARD
+                    if !weatherViewModel.currentTemp.isEmpty {
+                        VStack(spacing: 12) {
+                            Text("RIGHT NOW")
                                 .font(.caption.bold())
                                 .foregroundColor(.yellow)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal)
-                            
+
                             HStack(spacing: 20) {
-                                VStack(spacing: 5) {
-                                    Image(systemName: weatherViewModel.dailyForecasts.first?.iconName ?? "sun.max.fill")
-                                        .symbolRenderingMode(.multicolor)
-                                        .font(.system(size: 50))
-                                    Text("NOW")
-                                        .font(.caption2.bold())
-                                        .foregroundColor(.gray)
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 8) {
-                                    if let firstDay = weatherViewModel.dailyForecasts.first {
-                                        Text(firstDay.highTemp)
-                                            .font(.system(size: 48, weight: .bold))
-                                            .foregroundColor(.white)
-                                        
-                                        Text("High: \(firstDay.highTemp) • Low: \(firstDay.lowTemp)")
+                                Image(systemName: weatherViewModel.mapWeatherCode(weatherViewModel.currentWeatherCode))
+                                    .symbolRenderingMode(.multicolor)
+                                    .font(.system(size: 60))
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(weatherViewModel.currentTemp)
+                                        .font(.system(size: 64, weight: .black))
+                                        .foregroundColor(.white)
+
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "wind")
+                                            .font(.caption)
+                                            .foregroundColor(.yellow)
+                                        Text("Wind: \(weatherViewModel.currentWindSpeed)")
                                             .font(.subheadline)
                                             .foregroundColor(.gray)
                                     }
                                 }
-                                
                                 Spacer()
                             }
                             .padding()
-                            .background(Color.white.opacity(0.05))
+                            .background(Color.white.opacity(0.08))
                             .cornerRadius(15)
                             .padding(.horizontal)
                         }
                     }
 
-                    // 7-DAY OUTLOOK
+                    // 7-DAY FORECAST
                     if !weatherViewModel.dailyForecasts.isEmpty {
+                        Text("7-DAY FORECAST")
+                            .font(.caption.bold())
+                            .foregroundColor(.yellow)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+
                         VStack(spacing: 0) {
                             ForEach(weatherViewModel.dailyForecasts) { day in
                                 HStack {
@@ -136,15 +142,11 @@ struct WeatherViewForCoordinates: View {
                                         .font(.system(size: 16, weight: .bold))
                                         .frame(width: 75, alignment: .leading)
                                         .foregroundStyle(.black)
-                                    
                                     Spacer()
-                                    
                                     Image(systemName: day.iconName)
                                         .symbolRenderingMode(.multicolor)
                                         .font(.title3)
-                                    
                                     Spacer()
-                                    
                                     HStack(spacing: 4) {
                                         Text(day.lowTemp).opacity(0.7)
                                         Text("/")
@@ -155,7 +157,6 @@ struct WeatherViewForCoordinates: View {
                                 }
                                 .padding()
                                 .background(Color.white)
-                                
                                 if day.id != weatherViewModel.dailyForecasts.last?.id {
                                     Divider().background(Color.gray.opacity(0.3))
                                 }
@@ -168,22 +169,21 @@ struct WeatherViewForCoordinates: View {
                 }
                 .padding(.bottom, 40)
             }
-            
-            // BACK BUTTON
-            if !weatherViewModel.dailyForecasts.isEmpty {
-                Button {
-                    weatherViewModel.reset()
-                    dismiss()
-                } label: {
-                    HStack {
-                        Image(systemName: "chevron.left")
-                        Text("Back")
-                    }
-                    .fontWeight(.bold).foregroundStyle(.white).padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Color.black.opacity(0.7)).clipShape(Capsule())
-                }
-                .padding(.leading, 20).padding(.top, 10)
+
+            // YELLOW BACK BUTTON
+            Button {
+                weatherViewModel.reset()
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundColor(.yellow)
+                    .padding(12)
+                    .background(Color.black.opacity(0.6))
+                    .clipShape(Circle())
             }
+            .padding(.leading, 20)
+            .padding(.top, 10)
         }
         .toolbar(.hidden, for: .navigationBar)
         .overlay {
@@ -195,9 +195,12 @@ struct WeatherViewForCoordinates: View {
             }
         }
         .onAppear {
-            // Fetch weather using GPS coordinates directly
             Task {
-                await weatherViewModel.searchWeatherByCoordinates(latitude: latitude, longitude: longitude, locationName: locationName)
+                await weatherViewModel.searchWeatherByCoordinates(
+                    latitude: latitude,
+                    longitude: longitude,
+                    locationName: locationName
+                )
             }
         }
     }

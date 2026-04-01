@@ -1,25 +1,32 @@
-//
-//  OnThaSet__New_App.swift
-//  OnThaSet (New)
-//
-//  Created by Ramone Hayes on 12/4/25.
-//
 import SwiftUI
 import SwiftData
 
 @main
 struct OnThaSetApp: App {
-    @StateObject private var authService = AuthService()
-    
+    @AppStorage("hasAcceptedTerms") private var hasAcceptedTerms: Bool = false
+
+    var sharedModelContainer: ModelContainer = {
+        let schema = Schema([
+            Event.self,
+            UserProfile.self,
+        ])
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        do {
+            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+        } catch {
+            fatalError("Could not create ModelContainer: \(error)")
+        }
+    }()
+
     var body: some Scene {
         WindowGroup {
-            // Wrap DefaultPageView with AppCoordinatorView for location authorization
-            AppCoordinatorView {
+            if hasAcceptedTerms {
                 DefaultPageView()
-                    .environmentObject(authService)
+                    .environmentObject(AuthService())
+            } else {
+                FirstLaunchDisclaimerView(hasAcceptedTerms: $hasAcceptedTerms)
             }
         }
-        // 🆕 Added EventPhoto and BikeProgress models
-        .modelContainer(for: [Event.self, UserProfile.self, EventPhoto.self, BikeProgress.self])
+        .modelContainer(sharedModelContainer)
     }
 }

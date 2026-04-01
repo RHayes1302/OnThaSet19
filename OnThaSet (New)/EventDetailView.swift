@@ -12,9 +12,9 @@ import MapKit
 struct EventDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    
+
     var event: Event
-    
+
     @State private var showingFullImage = false
     @State private var showingEditSheet = false
     @State private var showingDeleteAlert = false
@@ -23,27 +23,26 @@ struct EventDetailView: View {
     @State private var showingWeather = false
     @State private var showingNavigationOptions = false
     @State private var region: MKCoordinateRegion
-    
+
     init(event: Event) {
         self.event = event
-        
-        // Initialize map region centered on event location
         _region = State(initialValue: MKCoordinateRegion(
             center: CLLocationCoordinate2D(
-                latitude: event.latitude != 0 ? event.latitude : 36.1699, // Default to Las Vegas
+                latitude: event.latitude != 0 ? event.latitude : 36.1699,
                 longitude: event.longitude != 0 ? event.longitude : -115.1398
             ),
             span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
         ))
     }
-    
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 20) {
-                    // FLYER IMAGE - TAPPABLE TO EXPAND
+
+                    // FLYER IMAGE
                     if let imageData = event.imageData, let uiImage = UIImage(data: imageData) {
                         Button(action: { showingFullImage = true }) {
                             Image(uiImage: uiImage)
@@ -54,7 +53,6 @@ struct EventDetailView: View {
                                 .cornerRadius(15)
                                 .shadow(color: .yellow.opacity(0.3), radius: 10)
                                 .overlay(
-                                    // Tap indicator
                                     VStack {
                                         Spacer()
                                         HStack {
@@ -85,22 +83,25 @@ struct EventDetailView: View {
                                 }
                             )
                     }
-                    
+
                     // EVENT INFO CARD
                     VStack(alignment: .leading, spacing: 15) {
-                        // Title
+
                         Text(event.title.uppercased())
                             .font(.title.bold())
                             .foregroundColor(.yellow)
-                        
-                        // 🆕 POSTED BY SECTION
+
+                        // POSTED BY
                         if !event.postedByUserID.isEmpty {
-                            NavigationLink(destination: PostedByProfileView(userID: event.postedByUserID)) {
+                            NavigationLink(destination: PostedByProfileView(
+                                userID: event.postedByUserID,
+                                posterName: event.postedByName
+                            )) {
                                 HStack(spacing: 10) {
                                     Image(systemName: "person.circle.fill")
                                         .font(.title3)
                                         .foregroundColor(.yellow)
-                                    
+
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Posted by")
                                             .font(.caption)
@@ -109,9 +110,9 @@ struct EventDetailView: View {
                                             .font(.subheadline.bold())
                                             .foregroundColor(.yellow)
                                     }
-                                    
+
                                     Spacer()
-                                    
+
                                     Image(systemName: "chevron.right")
                                         .font(.caption)
                                         .foregroundColor(.yellow.opacity(0.6))
@@ -125,40 +126,37 @@ struct EventDetailView: View {
                                 )
                             }
                         }
-                        
+
                         Divider().background(Color.yellow.opacity(0.3))
-                        
-                        // Date & Time
+
+                        // DATE & TIME
                         HStack {
                             Image(systemName: "calendar")
                                 .foregroundColor(.yellow)
                             Text(event.date.formatted(date: .long, time: .shortened))
                                 .foregroundColor(.white)
                         }
-                        
-                        // Location - Parse the new format
+
+                        // LOCATION
                         VStack(alignment: .leading, spacing: 5) {
                             let locationParts = event.locationName.split(separator: "|").map { String($0) }
-                            
                             if locationParts.count >= 5 {
-                                // New format: VenueName|Street|City|State|ZIP
                                 HStack(alignment: .top) {
                                     Image(systemName: "mappin.circle.fill")
                                         .foregroundColor(.yellow)
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(locationParts[0]) // Venue name
+                                        Text(locationParts[0])
                                             .font(.headline)
                                             .foregroundColor(.white)
-                                        Text(locationParts[1]) // Street
+                                        Text(locationParts[1])
                                             .font(.subheadline)
                                             .foregroundColor(.gray)
-                                        Text("\(locationParts[2]), \(locationParts[3]) \(locationParts[4])") // City, State ZIP
+                                        Text("\(locationParts[2]), \(locationParts[3]) \(locationParts[4])")
                                             .font(.subheadline)
                                             .foregroundColor(.gray)
                                     }
                                 }
                             } else {
-                                // Fallback for old format
                                 HStack {
                                     Image(systemName: "mappin.circle.fill")
                                         .foregroundColor(.yellow)
@@ -167,23 +165,21 @@ struct EventDetailView: View {
                                 }
                             }
                         }
-                        
-                        // Category
+
+                        // CATEGORY
                         HStack {
                             Image(systemName: "tag.fill")
                                 .foregroundColor(.yellow)
                             Text(event.category.displayName)
                                 .foregroundColor(.white)
                         }
-                        
-                        // Details
+
+                        // DETAILS
                         if !event.details.isEmpty {
                             Divider().background(Color.yellow.opacity(0.3))
-                            
                             Text("Details")
                                 .font(.headline)
                                 .foregroundColor(.yellow)
-                            
                             Text(event.details)
                                 .foregroundColor(.white)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -192,10 +188,9 @@ struct EventDetailView: View {
                     .padding()
                     .background(Color.white.opacity(0.05))
                     .cornerRadius(15)
-                    
-                    // WEATHER & GPS QUICK ACTIONS
+
+                    // WEATHER & DIRECTIONS
                     HStack(spacing: 12) {
-                        // WEATHER BUTTON
                         Button(action: { showingWeather = true }) {
                             HStack {
                                 Image(systemName: "cloud.sun.fill")
@@ -214,8 +209,7 @@ struct EventDetailView: View {
                             .foregroundColor(.white)
                             .cornerRadius(12)
                         }
-                        
-                        // GPS NAVIGATION BUTTON
+
                         Button(action: { showingNavigationOptions = true }) {
                             HStack {
                                 Image(systemName: "location.fill")
@@ -236,14 +230,14 @@ struct EventDetailView: View {
                         }
                     }
                     .padding(.horizontal)
-                    
-                    // MAP (if coordinates exist)
+
+                    // MAP
                     if event.latitude != 0 && event.longitude != 0 {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("LOCATION")
                                 .font(.headline)
                                 .foregroundColor(.yellow)
-                            
+
                             Map(coordinateRegion: $region, annotationItems: [event]) { location in
                                 MapMarker(coordinate: CLLocationCoordinate2D(
                                     latitude: location.latitude,
@@ -258,10 +252,9 @@ struct EventDetailView: View {
                         .background(Color.white.opacity(0.05))
                         .cornerRadius(15)
                     }
-                    
+
                     // ACTION BUTTONS
                     VStack(spacing: 12) {
-                        // SHARE BUTTON (Primary - most important for viral growth)
                         Button(action: { showingEnhancedShare = true }) {
                             HStack {
                                 Image(systemName: "square.and.arrow.up")
@@ -274,8 +267,7 @@ struct EventDetailView: View {
                             .foregroundColor(.black)
                             .cornerRadius(10)
                         }
-                        
-                        // Edit and Delete buttons
+
                         HStack(spacing: 15) {
                             Button(action: { showingEditSheet = true }) {
                                 Label("Edit", systemImage: "pencil")
@@ -286,7 +278,7 @@ struct EventDetailView: View {
                                     .foregroundColor(.yellow)
                                     .cornerRadius(10)
                             }
-                            
+
                             Button(action: { showingDeleteAlert = true }) {
                                 Label("Delete", systemImage: "trash")
                                     .font(.subheadline)
@@ -319,8 +311,6 @@ struct EventDetailView: View {
                     .offset(y: -1)
                 }
             }
-            
-            // SHARE BUTTON
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { showingEnhancedShare = true }) {
                     Image(systemName: "square.and.arrow.up")
@@ -336,7 +326,6 @@ struct EventDetailView: View {
         }
         .sheet(isPresented: $showingEditSheet) {
             EditEventView(event: event, onSave: { updatedEvent in
-                // Update the event
                 event.title = updatedEvent.title
                 event.date = updatedEvent.date
                 event.locationName = updatedEvent.locationName
@@ -345,7 +334,6 @@ struct EventDetailView: View {
                 event.imageData = updatedEvent.imageData
                 event.latitude = updatedEvent.latitude
                 event.longitude = updatedEvent.longitude
-                
                 try? modelContext.save()
                 showingEditSheet = false
             })
@@ -357,7 +345,7 @@ struct EventDetailView: View {
                 dismiss()
             }
         } message: {
-            Text("Are you sure you want to delete this event? This action cannot be undone.")
+            Text("Are you sure you want to delete this event? This cannot be undone.")
         }
         .sheet(isPresented: $showingShareSheet) {
             ShareSheet(items: EventShareHelper.createShareItems(for: event))
@@ -366,10 +354,8 @@ struct EventDetailView: View {
             EventShareView(event: event)
         }
         .sheet(isPresented: $showingWeather) {
-            // Use GPS coordinates for most accurate weather
             let locationParts = event.locationName.split(separator: "|").map { String($0) }
             let venueName = locationParts.first ?? event.title
-            
             if event.latitude != 0 && event.longitude != 0 {
                 WeatherViewForCoordinates(
                     latitude: event.latitude,
@@ -377,61 +363,51 @@ struct EventDetailView: View {
                     locationName: venueName
                 )
             } else if locationParts.count >= 3 {
-                // Fallback to city name if no coordinates
                 WeatherViewForEvent(cityName: String(locationParts[2]))
             }
         }
-        .confirmationDialog("Choose Navigation App", isPresented: $showingNavigationOptions, titleVisibility: .visible) {
-            Button("Apple Maps") {
-                openAppleMaps()
-            }
-            Button("Google Maps") {
-                openGoogleMaps()
-            }
-            Button("Waze") {
-                openWaze()
-            }
+        .confirmationDialog(
+            "Choose Navigation App",
+            isPresented: $showingNavigationOptions,
+            titleVisibility: .visible
+        ) {
+            Button("Apple Maps") { openAppleMaps() }
+            Button("Google Maps") { openGoogleMaps() }
+            Button("Waze") { openWaze() }
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Get directions to this event")
         }
     }
-    
+
     // MARK: - Navigation Methods
-    
+
     private func openAppleMaps() {
-        let coordinate = CLLocationCoordinate2D(latitude: event.latitude, longitude: event.longitude)
+        let coordinate = CLLocationCoordinate2D(
+            latitude: event.latitude,
+            longitude: event.longitude
+        )
         let placemark = MKPlacemark(coordinate: coordinate)
         let mapItem = MKMapItem(placemark: placemark)
-        
         let locationParts = event.locationName.split(separator: "|").map { String($0) }
         mapItem.name = locationParts.first ?? event.title
-        
-        let launchOptions = [
+        mapItem.openInMaps(launchOptions: [
             MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving
-        ]
-        
-        mapItem.openInMaps(launchOptions: launchOptions)
+        ])
     }
-    
+
     private func openGoogleMaps() {
-        let googleMapsURL = "comgooglemaps://?daddr=\(event.latitude),\(event.longitude)&directionsmode=driving"
-        let googleMapsWebURL = "https://www.google.com/maps/dir/?api=1&destination=\(event.latitude),\(event.longitude)"
-        
-        if let url = URL(string: googleMapsURL),
-           UIApplication.shared.canOpenURL(url) {
-            // Google Maps app is installed
+        let googleURL = "comgooglemaps://?daddr=\(event.latitude),\(event.longitude)&directionsmode=driving"
+        let webURL = "https://www.google.com/maps/dir/?api=1&destination=\(event.latitude),\(event.longitude)"
+        if let url = URL(string: googleURL), UIApplication.shared.canOpenURL(url) {
             UIApplication.shared.open(url)
-        } else if let url = URL(string: googleMapsWebURL) {
-            // Fall back to web version
+        } else if let url = URL(string: webURL) {
             UIApplication.shared.open(url)
         }
     }
-    
+
     private func openWaze() {
-        let wazeURL = "https://waze.com/ul?ll=\(event.latitude),\(event.longitude)&navigate=yes"
-        
-        if let url = URL(string: wazeURL) {
+        if let url = URL(string: "https://waze.com/ul?ll=\(event.latitude),\(event.longitude)&navigate=yes") {
             UIApplication.shared.open(url)
         }
     }

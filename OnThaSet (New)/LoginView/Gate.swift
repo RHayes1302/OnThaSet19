@@ -12,17 +12,18 @@ import AuthenticationServices
 struct GatePage: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var authService: AuthService
-    
+
     @State private var showError = false
     @State private var errorMessage = ""
-    
+    @State private var isSigningIn = false
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             VStack(spacing: 40) {
                 Spacer()
-                
+
                 // LOGO
                 ZStack {
                     Image(systemName: "shield.fill")
@@ -36,24 +37,31 @@ struct GatePage: View {
                     .foregroundColor(.black)
                     .offset(y: -5)
                 }
-                
+
                 // TITLE
                 Text("SIGN IN TO POST")
                     .font(.system(size: 36, weight: .black))
                     .foregroundColor(.white)
-                
+
                 // SUBTITLE
                 Text("Log in to manage your 4 monthly events and keep the community updated.")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
-                
+
                 Spacer()
-                
+
+                // Loading indicator while signing in
+                if isSigningIn {
+                    ProgressView()
+                        .tint(.yellow)
+                        .padding(.bottom, 8)
+                }
+
                 // SIGN IN WITH APPLE BUTTON
                 SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.email]
+                    request.requestedScopes = [.email, .fullName]
                 } onCompletion: { result in
                     switch result {
                     case .success(let authorization):
@@ -67,11 +75,10 @@ struct GatePage: View {
                 .signInWithAppleButtonStyle(.white)
                 .frame(height: 50)
                 .padding(.horizontal, 40)
-                
+                .disabled(isSigningIn)
+
                 // GO BACK BUTTON
-                Button(action: {
-                    // Handle go back - dismiss or navigate
-                }) {
+                Button(action: { }) {
                     Text("GO BACK")
                         .font(.headline.bold())
                         .foregroundColor(.yellow)
@@ -92,81 +99,96 @@ struct GatePage: View {
             Text(errorMessage)
         }
     }
-    
+
     // MARK: - Handle Apple Sign In
-    
+
     private func handleAuthorization(_ authorization: ASAuthorization) {
-        print("🔵 handleAuthorization called")
-        
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
             print("❌ Failed to get credential")
             return
         }
-        
+
         let userID = credential.user
         let email = credential.email ?? "no-email@placeholder.com"
-        
-        print("🔵 User ID: \(userID)")
-        print("🔵 Email: \(email)")
-        
-        // Check if profile already exists
+        let displayName = [
+            credential.fullName?.givenName,
+            credential.fullName?.familyName
+        ].compactMap { $0 }.joined(separator: " ")
+
+        isSigningIn = true
+        print("🔵 Signing in: \(userID)")
+
+        Task {
+            await saveUserToSupabase(
+                userID: userID,
+                email: email,
+                displayName: displayName
+            )
+            saveUserLocally(userID: userID, email: email)
+            authService.loginWithApple(userID: userID, email: email)
+            isSigningIn = false
+            print("✅ Sign in complete")
+        }
+    }
+
+    // MARK: - Save to Supabase
+
+    private func saveUserToSupabase(
+        userID: String,
+        email: String,
+        displayName: String
+    ) async {
+        do {
+            // Check if user already exists in Supabase
+            let existing: [[String: String]] = try await supabase
+                .from("users")
+                .select("apple_user_id")
+                .eq("apple_user_id", value: userID)
+                .execute()
+                .value
+
+            if existing.isEmpty {
+                // New user — insert into Supabase
+                try await supabase
+                    .from("users")
+                    .insert([
+                        "apple_user_id": userID,
+                        "email": email,
+                        "display_name": displayName
+                    ])
+                    .execute()
+                print("✅ New user saved to Supabase")
+            } else {
+                print("✅ Existing user found in Supabase")
+            }
+        } catch {
+            print("❌ Supabase user save error: \(error)")
+        }
+    }
+
+    // MARK: - Save Locally (SwiftData)
+
+    private func saveUserLocally(userID: String, email: String) {
         let descriptor = FetchDescriptor<UserProfile>(
             predicate: #Predicate { profile in
                 profile.appleUserID == userID
             }
         )
-        
         do {
-            let existingProfiles = try modelContext.fetch(descriptor)
-            print("🔵 Found \(existingProfiles.count) existing profiles")
-            
-            if let existingProfile = existingProfiles.first {
-                // User exists, just log them in
-                print("✅ Existing user logged in")
-                print("   Email: \(existingProfile.email)")
-                print("   Has subscription: \(existingProfile.hasActiveSubscription)")
-            } else {
-                // Create new profile
-                print("🔵 Creating new profile...")
-                
+            let existing = try modelContext.fetch(descriptor)
+            if existing.isEmpty {
                 let newProfile = UserProfile(
                     appleUserID: userID,
                     email: email
                 )
-                
-                print("🔵 Profile created in memory")
-                print("   Apple ID: \(newProfile.appleUserID)")
-                print("   Email: \(newProfile.email)")
-                print("   Has subscription: \(newProfile.hasActiveSubscription)")
-                
                 modelContext.insert(newProfile)
-                print("🔵 Profile inserted into context")
-                
-                do {
-                    try modelContext.save()
-                    print("✅ NEW USER CREATED AND SAVED!")
-                    
-                    // Verify it was saved
-                    let verifyDescriptor = FetchDescriptor<UserProfile>()
-                    let allProfiles = try modelContext.fetch(verifyDescriptor)
-                    print("🔵 Total profiles in database: \(allProfiles.count)")
-                    
-                } catch {
-                    print("❌ FAILED TO SAVE PROFILE: \(error)")
-                    errorMessage = "Failed to create profile: \(error.localizedDescription)"
-                    showError = true
-                    return
-                }
+                try? modelContext.save()
+                print("✅ Profile saved locally")
+            } else {
+                print("✅ Local profile already exists")
             }
-            
-            // Mark as logged in using Apple Sign In
-            authService.loginWithApple(userID: userID, email: email)
-            print("✅ User logged in via AuthService")
-            
         } catch {
-            print("❌ ERROR FETCHING PROFILES: \(error)")
-            errorMessage = "Database error: \(error.localizedDescription)"
-            showError = true
+            print("❌ Local profile error: \(error)")
         }
     }
 }

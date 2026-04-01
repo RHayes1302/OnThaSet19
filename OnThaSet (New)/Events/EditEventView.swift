@@ -5,6 +5,13 @@
 //  Created by Ramone Hayes on 1/19/26.
 //
 
+//
+//  EditEventView.swift
+//  OnThaSet (New)
+//
+//  Created by Ramone Hayes on 1/19/26.
+//
+
 import SwiftUI
 import SwiftData
 import PhotosUI
@@ -12,10 +19,10 @@ import CoreLocation
 
 struct EditEventView: View {
     @Environment(\.dismiss) private var dismiss
-    
+
     var event: Event
-    var onSave: (Event) -> Void
-    
+    var onSave: ((Event) -> Void)?
+
     @State private var title: String = ""
     @State private var date: Date = Date()
     @State private var venueName: String = ""
@@ -27,15 +34,18 @@ struct EditEventView: View {
     @State private var details: String = ""
     @State private var selectedItem: PhotosPickerItem?
     @State private var selectedImageData: Data?
+    @State private var isSaving = false
+    @State private var showSuccessAlert = false
+    @State private var showErrorAlert = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
-                // BRANDED HEADER
                 headerSection
-                
+
                 ScrollView {
                     VStack(spacing: 25) {
                         flyerSection
@@ -43,18 +53,26 @@ struct EditEventView: View {
                     }
                     .padding()
                 }
-                
-                // SAVE BUTTON (No payment required)
-                Button(action: { saveData() }) {
-                    Text("SAVE CHANGES")
-                        .font(.headline.bold())
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(!title.isEmpty ? Color.yellow : Color.gray)
-                        .cornerRadius(12)
+
+                Button(action: {
+                    Task { await saveToSupabase() }
+                }) {
+                    HStack {
+                        if isSaving {
+                            ProgressView()
+                                .tint(.black)
+                                .padding(.trailing, 4)
+                        }
+                        Text(isSaving ? "SAVING..." : "SAVE CHANGES")
+                            .font(.headline.bold())
+                            .foregroundColor(.black)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(!title.isEmpty && !isSaving ? Color.yellow : Color.gray)
+                    .cornerRadius(12)
                 }
-                .disabled(title.isEmpty)
+                .disabled(title.isEmpty || isSaving)
                 .padding()
             }
         }
@@ -64,10 +82,19 @@ struct EditEventView: View {
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self),
                    let uiImage = UIImage(data: data) {
-                    // ✅ COMPRESS IMAGE BEFORE STORING
                     selectedImageData = ImageCompressor.compress(uiImage, maxSizeKB: 500)
                 }
             }
+        }
+        .alert("Changes Saved!", isPresented: $showSuccessAlert) {
+            Button("OK") { dismiss() }
+        } message: {
+            Text("Your event has been updated for all riders on On Tha Set.")
+        }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage ?? "Something went wrong. Please try again.")
         }
     }
 
@@ -104,7 +131,6 @@ struct EditEventView: View {
         PhotosPicker(selection: $selectedItem, matching: .images) {
             ZStack {
                 if let data = selectedImageData, let uiImage = UIImage(data: data) {
-                    // ✅ SHOW ENTIRE FLYER WITH PROPER ASPECT FIT
                     Image(uiImage: uiImage)
                         .resizable()
                         .scaledToFit()
@@ -134,7 +160,7 @@ struct EditEventView: View {
                 TextField("Set Name", text: $title)
                     .modifier(FormTextFieldStyle())
             }
-            
+
             fieldContainer(label: "EVENT DATE & TIME") {
                 DatePicker("", selection: $date, displayedComponents: [.date, .hourAndMinute])
                     .datePickerStyle(.compact)
@@ -144,36 +170,48 @@ struct EditEventView: View {
                     .background(Color.white.opacity(0.1))
                     .cornerRadius(8)
             }
-            
+
             fieldContainer(label: "VENUE NAME") {
                 TextField("e.g., The Hideout", text: $venueName)
                     .modifier(FormTextFieldStyle())
             }
-            
+
             fieldContainer(label: "STREET ADDRESS") {
                 TextField("e.g., 4211 Fossatello Ave", text: $streetAddress)
                     .modifier(FormTextFieldStyle())
             }
-            
+
             HStack(spacing: 12) {
                 fieldContainer(label: "CITY") {
                     TextField("Las Vegas", text: $cityName)
                         .modifier(FormTextFieldStyle())
                 }
-                
                 fieldContainer(label: "STATE") {
                     TextField("NV", text: $stateName)
                         .modifier(FormTextFieldStyle())
                 }
                 .frame(width: 80)
             }
-            
+
             fieldContainer(label: "ZIP CODE") {
                 TextField("89084", text: $zipCode)
                     .modifier(FormTextFieldStyle())
                     .keyboardType(.numberPad)
             }
-            
+
+            fieldContainer(label: "CATEGORY") {
+                Picker("Category", selection: $category) {
+                    ForEach(EventCategory.allCases, id: \.self) { cat in
+                        Text(cat.rawValue).tag(cat)
+                    }
+                }
+                .pickerStyle(.menu)
+                .padding()
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(8)
+                .foregroundColor(.yellow)
+            }
+
             fieldContainer(label: "DETAILS") {
                 TextField("Description", text: $details, axis: .vertical)
                     .lineLimit(3...5)
@@ -182,70 +220,114 @@ struct EditEventView: View {
         }
     }
 
-    private func fieldContainer<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func fieldContainer<Content: View>(
+        label: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.caption2.bold()).foregroundColor(.yellow).padding(.leading, 5)
+            Text(label)
+                .font(.caption2.bold())
+                .foregroundColor(.yellow)
+                .padding(.leading, 5)
             content()
         }
     }
 
-    // MARK: - Logic & Helpers
-    
+    // MARK: - Load Initial Data
+
     func loadInitialData() {
         title = event.title
         date = event.date
-        
-        // Parse: "VenueName|CityName|FullAddress" or new format "VenueName|Street|City|State|ZIP"
+
         let parts = event.locationName.split(separator: "|").map { String($0) }
-        
         if parts.count >= 5 {
-            // New format: VenueName|Street|City|State|ZIP
             venueName = parts[0]
             streetAddress = parts[1]
             cityName = parts[2]
             stateName = parts[3]
             zipCode = parts[4]
         } else if parts.count == 3 {
-            // Old format: VenueName|CityName|FullAddress
             venueName = parts[0]
             cityName = parts[1]
-            // Try to parse full address
             let addressParts = parts[2].components(separatedBy: ",")
             if addressParts.count >= 2 {
                 streetAddress = addressParts[0].trimmingCharacters(in: .whitespaces)
             }
         }
-        
+
         category = event.category
         details = event.details
         selectedImageData = event.imageData
     }
 
-    func saveData() {
-        // Construct full address for geocoding
+    // MARK: - Save to Supabase
+
+    func saveToSupabase() async {
+        isSaving = true
+
         let fullAddress = "\(streetAddress), \(cityName), \(stateName) \(zipCode)"
-        
         let geocoder = CLGeocoder()
-        geocoder.geocodeAddressString(fullAddress) { placemarks, _ in
-            let coordinate = placemarks?.first?.location?.coordinate
-            
-            // New storage format: VenueName|Street|City|State|ZIP (more precise!)
+
+        do {
+            let placemarks = try await geocoder.geocodeAddressString(fullAddress)
+            let coordinate = placemarks.first?.location?.coordinate
             let combinedLocation = "\(venueName)|\(streetAddress)|\(cityName)|\(stateName)|\(zipCode)"
-            
-            let updatedEvent = Event(
-                title: title,
-                date: date,
-                category: category,
-                locationName: combinedLocation,
-                details: details,
-                securityCode: event.securityCode,
-                price: event.price,
-                latitude: coordinate?.latitude ?? event.latitude,
-                longitude: coordinate?.longitude ?? event.longitude
-            )
-            updatedEvent.imageData = selectedImageData
-            
-            onSave(updatedEvent)
+
+            // Upload new flyer if one was selected
+            var imageURL: String? = nil
+            if let imageData = selectedImageData {
+                let fileName = "flyer-\(event.id)-updated.jpg"
+                imageURL = try await SupabaseManager.shared.uploadImage(
+                    data: imageData,
+                    bucket: "event-flyers",
+                    fileName: fileName
+                )
+                print("✅ Updated flyer uploaded: \(imageURL ?? "")")
+            }
+
+            // Update the event in Supabase
+            try await supabase
+                .from("events")
+                .update([
+                    "title": title,
+                    "date": ISO8601DateFormatter().string(from: date),
+                    "category": category.rawValue,
+                    "location_name": combinedLocation,
+                    "details": details,
+                    "latitude": String(coordinate?.latitude ?? event.latitude),
+                    "longitude": String(coordinate?.longitude ?? event.longitude)
+                ])
+                .eq("title", value: event.title)
+                .eq("posted_by_user_id", value: event.postedByUserID)
+                .execute()
+
+            print("✅ Event updated in Supabase")
+
+            // Also call local onSave if provided
+            if let onSave = onSave {
+                let updatedEvent = Event(
+                    title: title,
+                    date: date,
+                    category: category,
+                    locationName: combinedLocation,
+                    details: details,
+                    securityCode: event.securityCode,
+                    price: event.price,
+                    latitude: coordinate?.latitude ?? event.latitude,
+                    longitude: coordinate?.longitude ?? event.longitude
+                )
+                updatedEvent.imageData = selectedImageData
+                onSave(updatedEvent)
+            }
+
+            isSaving = false
+            showSuccessAlert = true
+
+        } catch {
+            print("❌ Error updating event: \(error)")
+            errorMessage = error.localizedDescription
+            isSaving = false
+            showErrorAlert = true
         }
     }
 }

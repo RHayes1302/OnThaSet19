@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		992BD8D32F75AC5B007ABF69 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 992BD8D22F75AC5B007ABF69 /* Supabase */; };
+		992BD97F2F7CE71D007ABF69 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 992BD97E2F7CE71D007ABF69 /* WebKit.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		996BBC7F2EE23EE800C4A68C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,38 +29,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		992BD97E2F7CE71D007ABF69 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		996BBC6F2EE23EE700C4A68C /* OnThaSet (New).app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OnThaSet (New).app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		996BBC7E2EE23EE800C4A68C /* OnThaSet (New)Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OnThaSet (New)Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		996BBC882EE23EE800C4A68C /* OnThaSet (New)UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OnThaSet (New)UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		9990F3BC2F20982500525F89 /* Exceptions for "OnThaSet (New)" folder in "OnThaSet (New)" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				.swift,
-			);
-			target = 996BBC6E2EE23EE700C4A68C /* OnThaSet (New) */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		9990F3BD2F20982500525F89 /* Exceptions for "OnThaSet (New)" folder in "Compile Sources" phase from "OnThaSet (New)" target */ = {
-			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
-			buildPhase = 996BBC6B2EE23EE700C4A68C /* Sources */;
-			membershipExceptions = (
-				.swift,
-			);
-		};
-/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		996BBC712EE23EE700C4A68C /* OnThaSet (New) */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				9990F3BC2F20982500525F89 /* Exceptions for "OnThaSet (New)" folder in "OnThaSet (New)" target */,
-				9990F3BD2F20982500525F89 /* Exceptions for "OnThaSet (New)" folder in "Compile Sources" phase from "OnThaSet (New)" target */,
-			);
 			path = "OnThaSet (New)";
 			sourceTree = "<group>";
 		};
@@ -76,6 +58,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				992BD97F2F7CE71D007ABF69 /* WebKit.framework in Frameworks */,
+				992BD8D32F75AC5B007ABF69 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,12 +80,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		992BD8D12F75AC5B007ABF69 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				992BD97E2F7CE71D007ABF69 /* WebKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		996BBC662EE23EE700C4A68C = {
 			isa = PBXGroup;
 			children = (
 				996BBC712EE23EE700C4A68C /* OnThaSet (New) */,
 				996BBC812EE23EE800C4A68C /* OnThaSet (New)Tests */,
 				996BBC8B2EE23EE800C4A68C /* OnThaSet (New)UITests */,
+				992BD8D12F75AC5B007ABF69 /* Frameworks */,
 				996BBC702EE23EE700C4A68C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -136,6 +129,7 @@
 			);
 			name = "OnThaSet (New)";
 			packageProductDependencies = (
+				992BD8D22F75AC5B007ABF69 /* Supabase */,
 			);
 			productName = "OnThaSet (New)";
 			productReference = 996BBC6F2EE23EE700C4A68C /* OnThaSet (New).app */;
@@ -219,6 +213,9 @@
 			);
 			mainGroup = 996BBC662EE23EE700C4A68C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				992BD8CC2F75A667007ABF69 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 996BBC702EE23EE700C4A68C /* Products */;
 			projectDirPath = "";
@@ -590,6 +587,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		992BD8CC2F75A667007ABF69 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		992BD8D22F75AC5B007ABF69 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 992BD8CC2F75A667007ABF69 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 996BBC672EE23EE700C4A68C /* Project object */;
 }
