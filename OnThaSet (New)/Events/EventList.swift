@@ -221,6 +221,7 @@ struct SupabaseEventDetailView: View {
     @State private var showingNavigationOptions = false
     @State private var showingFullImage = false
     @State private var showingShare = false
+    @State private var showingReport = false
 
     var cityName: String {
         let parts = event.locationName.split(separator: "|").map { String($0) }
@@ -319,8 +320,31 @@ struct SupabaseEventDetailView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        Text("Posted by \(event.postedByName)")
-                            .font(.caption).foregroundColor(.gray)
+                        NavigationLink(destination: PostedByProfileView(
+                            userID: event.postedByUserID,
+                            posterName: event.postedByName
+                        )) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.title3).foregroundColor(.yellow)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Posted by")
+                                        .font(.caption).foregroundColor(.gray)
+                                    Text(event.postedByName.isEmpty ? "Member" : event.postedByName)
+                                        .font(.subheadline.bold()).foregroundColor(.yellow)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundColor(.yellow.opacity(0.6))
+                            }
+                            .padding(12)
+                            .background(Color.white.opacity(0.05))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.yellow.opacity(0.3), lineWidth: 1)
+                            )
+                        }
                     }
                     .padding()
                     .background(Color.white.opacity(0.05))
@@ -415,11 +439,23 @@ struct SupabaseEventDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingShare = true }) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.title3).foregroundColor(.yellow)
+                HStack(spacing: 4) {
+                    Button(action: { showingReport = true }) {
+                        Image(systemName: "flag")
+                            .font(.title3).foregroundColor(.red.opacity(0.8))
+                    }
+                    Button(action: { showingShare = true }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title3).foregroundColor(.yellow)
+                    }
                 }
             }
+        }
+        .sheet(isPresented: $showingReport) {
+            ReportEventView(
+                eventID: event.id?.uuidString ?? event.title,
+                eventTitle: event.title
+            )
         }
         .sheet(isPresented: $showingShare) {
             SupabaseEventShareView(

@@ -12,6 +12,7 @@ struct AboutView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var profiles: [UserProfile]
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var authService: AuthService
 
     var body: some View {
         ZStack {
@@ -199,11 +200,8 @@ struct AboutView: View {
     }
     
     func signOut() {
-        if let profile = profiles.first {
-            modelContext.delete(profile)
-            try? modelContext.save()
-            dismiss()
-        }
+        authService.logout()
+        dismiss()
     }
 }
 

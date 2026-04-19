@@ -149,7 +149,7 @@ struct ProfileView: View {
                 )
                 featureRow(
                     icon: "wrench.and.screwdriver.fill",
-                    title: "Pimp My Ride",
+                    title: "My Bike Builds",
                     description: "Document your bike's transformation",
                     destination: AnyView(BikeProgressFeedView())
                 )
@@ -235,7 +235,7 @@ struct ProfileView: View {
                         Text("Monthly Subscription")
                             .font(.subheadline.bold())
                             .foregroundColor(.white)
-                        Text("$9.00 / month")
+                        Text("$2.99 / month")
                             .font(.caption)
                             .foregroundColor(.gray)
                         if let startDate = profile.subscriptionStartDate {
@@ -276,7 +276,7 @@ struct ProfileView: View {
                 }
 
                 Button(action: { showingPaymentSheet = true }) {
-                    Text("SUBSCRIBE NOW - $9/MONTH")
+                    Text("SUBSCRIBE NOW - $2.99/MONTH")
                         .font(.caption.bold())
                         .foregroundColor(.black)
                         .frame(maxWidth: .infinity)

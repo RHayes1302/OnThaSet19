@@ -27,6 +27,14 @@ struct DefaultPageView: View {
     @State private var showingPrivacyPolicy = false
     @State private var showingTerms = false
     @State private var showingExtraPostSheet = false
+    @State private var showingWelcomeSetup = false
+    @State private var navigateToProfile = false
+
+    private var currentProfile: UserProfile? { profiles.first }
+    private var needsSetup: Bool {
+        guard let p = currentProfile else { return false }
+        return !p.hasCompletedSetup
+    }
 
     var body: some View {
         NavigationStack {
@@ -115,52 +123,67 @@ struct DefaultPageView: View {
                                 locationManager.requestLocation()
                             })
 
-                            // POST EVENT BUTTON
-                            Button(action: { handlePostAttempt() }) {
-                                VStack(spacing: 4) {
-                                    Text("POST EVENT").font(.headline.bold())
-                                    if let profile = profiles.first, profile.hasActiveSubscription {
-                                        let remaining = profile.remainingPosts()
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "checkmark.circle.fill").font(.caption2)
-                                            Text("\(remaining) post\(remaining == 1 ? "" : "s") remaining")
-                                                .font(.caption2.bold())
+                            // MY ACCOUNT — profile hub with photo
+                            Button(action: {
+                                if needsSetup {
+                                    showingWelcomeSetup = true
+                                } else {
+                                    navigateToProfile = true
+                                }
+                            }) {
+                                HStack(spacing: 14) {
+                                    // Profile photo
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.yellow.opacity(0.2))
+                                            .frame(width: 56, height: 56)
+                                        if let profile = currentProfile,
+                                           let data = profile.profileImageData,
+                                           let img = UIImage(data: data) {
+                                            Image(uiImage: img)
+                                                .resizable().scaledToFill()
+                                                .frame(width: 54, height: 54)
+                                                .clipShape(Circle())
+                                        } else if let profile = currentProfile,
+                                                  !profile.profileImageURL.isEmpty,
+                                                  let url = URL(string: profile.profileImageURL) {
+                                            AsyncImage(url: url) { phase in
+                                                if case .success(let img) = phase {
+                                                    img.resizable().scaledToFill()
+                                                        .frame(width: 54, height: 54)
+                                                        .clipShape(Circle())
+                                                } else {
+                                                    Image(systemName: "person.fill")
+                                                        .font(.title2).foregroundColor(.yellow)
+                                                }
+                                            }
+                                        } else {
+                                            Image(systemName: "person.fill")
+                                                .font(.title2).foregroundColor(.yellow)
                                         }
-                                        .foregroundColor(remaining > 0 ? .green : .orange)
-                                    } else {
-                                        Text("$0.99 per post or $2.99/month")
-                                            .font(.caption2)
-                                            .foregroundColor(.black.opacity(0.7))
                                     }
-                                }
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.yellow)
-                                .cornerRadius(8)
-                            }
+                                    .overlay(Circle().stroke(Color.yellow, lineWidth: 2))
 
-                            // MY ACCOUNT
-                            NavigationLink(destination: MyAccountView()
-                                .navigationBarBackButtonHidden(true)
-                                .toolbar {
-                                    ToolbarItem(placement: .navigationBarLeading) {
-                                        EmptyView()
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(currentProfile?.displayName.isEmpty == false ? currentProfile!.displayName : "MY ACCOUNT")
+                                            .font(.headline.bold())
+                                            .foregroundColor(.yellow)
+                                        Text("Post Events • Photos • Bike Builds")
+                                            .font(.caption)
+                                            .foregroundColor(.gray)
                                     }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.bold())
+                                        .foregroundColor(.yellow)
                                 }
-                            ) {
-                                HStack {
-                                    Image(systemName: "person.circle.fill").font(.title3)
-                                    Text("MY ACCOUNT").font(.headline.bold())
-                                }
-                                .foregroundColor(.yellow)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(8)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+                                .background(Color.white.opacity(0.06))
+                                .cornerRadius(12)
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.yellow, lineWidth: 2)
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
                                 )
                             }
                         }
@@ -238,6 +261,10 @@ struct DefaultPageView: View {
                     }
                 }
             }
+            .navigationDestination(isPresented: $navigateToProfile) {
+                MyAccountView()
+                    .navigationBarBackButtonHidden(true)
+            }
             .navigationDestination(isPresented: $navigateToPost) {
                 AddEditEventView(
                     eventToEdit: Event(
@@ -295,12 +322,41 @@ struct DefaultPageView: View {
         } message: {
             Text(limitAlertMessage)
         }
+        .sheet(isPresented: $showingWelcomeSetup, onDismiss: {
+            navigateToProfile = true
+        }) {
+            if let profile = currentProfile {
+                WelcomeSetupView(profile: profile, onComplete: {
+                    showingWelcomeSetup = false
+                })
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showWelcomeSetup)) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                showingWelcomeSetup = true
+            }
+        }
         .onAppear {
             if let profile = profiles.first {
                 profile.hasActiveSubscription = storeManager.hasActiveSubscription
             }
             Task {
                 await SupabaseManager.shared.fetchActiveAds()
+                await SupabaseManager.shared.fetchAllEvents()
+                // Sync: remove local events that no longer exist in Supabase
+                let supabaseTitles = Set(SupabaseManager.shared.events.map { $0.title.lowercased() })
+                if !supabaseTitles.isEmpty {
+                    for event in allEvents {
+                        if !supabaseTitles.contains(event.title.lowercased()) {
+                            modelContext.delete(event)
+                        }
+                    }
+                    try? modelContext.save()
+                } else {
+                    // No Supabase events — delete all local events
+                    for event in allEvents { modelContext.delete(event) }
+                    try? modelContext.save()
+                }
             }
         }
     }

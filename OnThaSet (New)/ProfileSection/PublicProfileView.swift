@@ -25,6 +25,9 @@ struct PublicProfileView: View {
     // State for photo expansion and deletion
     @State private var showingFullImage = false
     @State private var selectedImage: UIImage?
+    @State private var galleryImages: [UIImage] = []
+    @State private var galleryIndex: Int = 0
+    @State private var showingGallery = false
     @State private var selectedPhoto: EventPhoto?
     @State private var selectedBikeEntry: BikeProgress?
     @State private var showingDeleteAlert = false
@@ -59,18 +62,21 @@ struct PublicProfileView: View {
                     statsSection.padding(.horizontal)
                     ridingInfoSection.padding(.horizontal)
                     socialLinksSection.padding(.horizontal)
-                    
+
                     if !userEvents.isEmpty {
                         latestEventsSection.padding(.horizontal)
                     }
-                    
+
                     if !userPhotos.isEmpty {
                         photoGallerySection.padding(.horizontal)
                     }
-                    
+
                     if !userBikeProgress.isEmpty {
                         bikeProgressSection.padding(.horizontal)
                     }
+
+                    // Bottom padding so floating action buttons don't overlap content
+                    Color.clear.frame(height: 160)
                 }
             }
         }
@@ -101,6 +107,34 @@ struct PublicProfileView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showingGallery) {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                TabView(selection: $galleryIndex) {
+                    ForEach(galleryImages.indices, id: \.self) { index in
+                        Image(uiImage: galleryImages[index])
+                            .resizable().scaledToFit()
+                            .tag(index)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .always))
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button(action: { showingGallery = false }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title).foregroundColor(.white)
+                                .shadow(color: .black, radius: 4).padding()
+                        }
+                    }
+                    Spacer()
+                    Text("\(galleryIndex + 1) / \(galleryImages.count)")
+                        .font(.caption).foregroundColor(.white.opacity(0.7))
+                        .padding(.bottom, 40)
+                }
+            }
+            .presentationBackground(.black)
         }
         .onChange(of: showingFullImage) { oldValue, newValue in
             print("📊 showingFullImage changed: \(oldValue) → \(newValue)")
@@ -143,80 +177,31 @@ struct PublicProfileView: View {
             HStack {
                 sectionHeader(icon: "photo.on.rectangle", title: "PHOTO GALLERY")
                 Spacer()
-                // ✅ Shows count
-                Text("\(userPhotos.count)")
-                    .font(.headline.bold())
-                    .foregroundColor(.yellow)
+                Text("\(userPhotos.count)").font(.headline.bold()).foregroundColor(.yellow)
             }
-            
+
             if userPhotos.isEmpty {
-                Text("No photos yet")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
-                    .frame(maxWidth: .infinity)
-                    .padding()
+                Text("No photos yet").font(.subheadline).foregroundColor(.gray)
+                    .frame(maxWidth: .infinity).padding()
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     ForEach(userPhotos) { photo in
-                        Button(action: {
-                            print("🟢 Event Photo tapped: \(photo.photoFileName)")
-                            if let imageData = loadPhotoImage(filename: photo.photoFileName) {
-                                // Clear all state first
-                                selectedBikeEntry = nil
-                                selectedPhoto = nil
-                                selectedImage = nil
-                                
-                                // Then set new state
-                                selectedImage = imageData
+                        ZStack(alignment: .topTrailing) {
+                            // Photo thumbnail
+                            photoThumbnail(photo: photo)
+
+                            // Delete button — always visible
+                            Button(action: {
                                 selectedPhoto = photo
-                                showingFullImage = true
-                                print("✅ State set - Photo: \(photo.photoFileName), Bike: nil")
-                            } else {
-                                print("❌ Failed to load image")
-                            }
-                        }) {
-                            Group {
-                                if let imageData = loadPhotoImage(filename: photo.photoFileName) {
-                                    Image(uiImage: imageData)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 100, height: 100)
-                                        .clipped()
-                                        .cornerRadius(8)
-                                        .shadow(color: .yellow.opacity(0.3), radius: 3)
-                                        .overlay(
-                                            VStack {
-                                                Spacer()
-                                                HStack {
-                                                    Spacer()
-                                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                                        .font(.system(size: 8))
-                                                        .foregroundColor(.white)
-                                                        .padding(4)
-                                                        .background(.ultraThinMaterial)
-                                                        .cornerRadius(4)
-                                                        .padding(4)
-                                                }
-                                            }
-                                        )
-                                } else {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.white.opacity(0.1))
-                                        .frame(width: 100, height: 100)
-                                        .overlay(
-                                            VStack {
-                                                Image(systemName: "photo")
-                                                    .foregroundColor(.yellow)
-                                                Text(photo.eventName)
-                                                    .font(.caption2)
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(1)
-                                            }
-                                        )
-                                }
+                                showingDeleteAlert = true
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(.red)
+                                    .background(Color.black.clipShape(Circle()))
+                                    .padding(4)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -225,98 +210,119 @@ struct PublicProfileView: View {
         .background(Color.white.opacity(0.05))
         .cornerRadius(15)
         .padding(.bottom, 15)
+        .alert("Delete Photo?", isPresented: $showingDeleteAlert) {
+            Button("Cancel", role: .cancel) { selectedPhoto = nil }
+            Button("Delete", role: .destructive) {
+                if let photo = selectedPhoto {
+                    let url = photo.photoFileName
+                    Task {
+                        // Delete from storage
+                        await SupabaseManager.shared.deleteStorageFile(imageURL: url, bucket: "event-photos")
+                        // Delete from event_photos Supabase table
+                        await SupabaseManager.shared.deleteEventPhotoRecord(imageURL: url, userID: profile.appleUserID)
+                    }
+                    profile.decrementPhotoCount()
+                    modelContext.delete(photo)
+                    try? modelContext.save()
+                    selectedPhoto = nil
+                }
+            }
+        } message: {
+            Text("This will permanently delete this photo.")
+        }
     }
-    
-    // MARK: - Bike Progress Section (NOW SHOWS ALL)
-    
+
+    @ViewBuilder
+    private func photoThumbnail(photo: EventPhoto) -> some View {
+        if photo.photoFileName.hasPrefix("http"), let url = URL(string: photo.photoFileName) {
+            Button(action: {
+                // Build gallery from all event photos
+                let allPhotos = (try? modelContext.fetch(FetchDescriptor<EventPhoto>())) ?? []
+                let urls = allPhotos.compactMap { URL(string: $0.photoFileName) }
+                let idx = allPhotos.firstIndex(where: { $0.photoFileName == photo.photoFileName }) ?? 0
+                Task {
+                    var images: [UIImage] = []
+                    for u in urls {
+                        if let (data, _) = try? await URLSession.shared.data(from: u),
+                           let img = UIImage(data: data) { images.append(img) }
+                    }
+                    await MainActor.run {
+                        galleryImages = images
+                        galleryIndex = min(idx, max(0, images.count - 1))
+                        selectedPhoto = photo
+                        showingGallery = true
+                    }
+                }
+            }) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                            .frame(width: 100, height: 100).clipped().cornerRadius(8)
+                    case .failure:
+                        photoPlaceholder
+                    default:
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05))
+                                .frame(width: 100, height: 100)
+                            ProgressView().tint(.yellow)
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        } else if let img = loadPhotoImage(filename: photo.photoFileName) {
+            Button(action: {
+                selectedImage = img
+                selectedPhoto = photo
+                showingFullImage = true
+            }) {
+                Image(uiImage: img).resizable().scaledToFill()
+                    .frame(width: 100, height: 100).clipped().cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        } else {
+            photoPlaceholder
+        }
+    }
+
+    private var photoPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05))
+            .frame(width: 100, height: 100)
+            .overlay(Image(systemName: "photo").foregroundColor(.gray))
+    }
+
     private var bikeProgressSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
-                sectionHeader(icon: "wrench.and.screwdriver", title: "BIKE PROGRESS")
+                sectionHeader(icon: "wrench.and.screwdriver", title: "MY BIKE BUILDS")
                 Spacer()
-                // ✅ Shows count
                 Text("\(userBikeProgress.count)")
                     .font(.headline.bold())
                     .foregroundColor(.yellow)
             }
-            
+
             if userBikeProgress.isEmpty {
-                Text("No bike updates yet")
+                Text("No bike builds yet")
                     .font(.subheadline)
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity)
                     .padding()
             } else {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    ForEach(userBikeProgress) { progress in
-                        Button(action: {
-                            print("🟢 Bike Progress tapped: \(progress.modificationTitle)")
-                            if let afterImage = loadPhotoImage(filename: progress.afterImage) {
-                                // Clear all state first
-                                selectedPhoto = nil
-                                selectedBikeEntry = nil
-                                selectedImage = nil
-                                
-                                // Then set new state
-                                selectedImage = afterImage
-                                selectedBikeEntry = progress
-                                showingFullImage = true
-                                print("✅ State set - Bike: \(progress.modificationTitle), Photo: nil")
-                            } else {
-                                print("❌ Failed to load bike image")
-                            }
-                        }) {
-                            VStack(spacing: 5) {
-                                if let afterImage = loadPhotoImage(filename: progress.afterImage) {
-                                    Image(uiImage: afterImage)
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(height: 100)
-                                        .clipped()
-                                        .cornerRadius(8)
-                                        .shadow(color: .yellow.opacity(0.3), radius: 3)
-                                        .overlay(
-                                            VStack {
-                                                Spacer()
-                                                HStack {
-                                                    Spacer()
-                                                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                                        .font(.system(size: 8))
-                                                        .foregroundColor(.white)
-                                                        .padding(4)
-                                                        .background(.ultraThinMaterial)
-                                                        .cornerRadius(4)
-                                                        .padding(4)
-                                                }
-                                            }
-                                        )
-                                } else {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.white.opacity(0.1))
-                                        .frame(height: 100)
-                                        .overlay(
-                                            Image(systemName: "wrench.and.screwdriver")
-                                                .font(.title2)
-                                                .foregroundColor(.yellow)
-                                        )
-                                }
-                                
-                                Text(progress.modificationTitle)
-                                    .font(.caption.bold())
-                                    .foregroundColor(.white)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.center)
-                                
-                                if !progress.bikeMake.isEmpty {
-                                    Text("\(progress.bikeYear) \(progress.bikeMake)")
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
-                                        .lineLimit(1)
-                                }
-                            }
+                ForEach(userBikeProgress) { progress in
+                    BikeProgressCard(
+                        entry: progress,
+                        imageStore: ImageFileStore(),
+                        onImageTap: { image in
+                            selectedBikeEntry = progress
+                            selectedImage = image
+                            showingFullImage = true
+                        },
+                        onDelete: {
+                            selectedBikeEntry = progress
+                            showingDeleteAlert = true
                         }
-                        .buttonStyle(.plain)
-                    }
+                    )
                 }
             }
         }
@@ -324,19 +330,51 @@ struct PublicProfileView: View {
         .background(Color.white.opacity(0.05))
         .cornerRadius(15)
         .padding(.bottom, 15)
+        .alert("Delete Bike Build?", isPresented: $showingDeleteAlert) {
+            Button("Cancel", role: .cancel) {
+                selectedBikeEntry = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let entry = selectedBikeEntry {
+                    let beforeURL = entry.beforeImage
+                    let afterURL = entry.afterImage
+                    Task {
+                        await SupabaseManager.shared.deleteStorageFile(imageURL: beforeURL, bucket: "bike-progress")
+                        await SupabaseManager.shared.deleteStorageFile(imageURL: afterURL, bucket: "bike-progress")
+                        await SupabaseManager.shared.deleteBikeBuildRecord(afterImageURL: afterURL, userID: profile.appleUserID)
+                    }
+                    modelContext.delete(entry)
+                    try? modelContext.save()
+                    selectedBikeEntry = nil
+                }
+            }
+        } message: {
+            Text("This will delete both photos. This cannot be undone.")
+        }
     }
-    
     // [REST OF THE FILE STAYS THE SAME - ALL OTHER SECTIONS]
     // I'll include the helper sections below for completeness...
     
     private var backgroundSection: some View {
         ZStack {
             if let data = profile.backgroundImageData, let uiImage = UIImage(data: data) {
-                Image(uiImage: uiImage).resizable().scaledToFill().frame(height: 200).clipped()
+                Image(uiImage: uiImage)
+                    .resizable().scaledToFit().frame(maxWidth: .infinity)
+            } else if !profile.backgroundImageURL.isEmpty, let url = URL(string: profile.backgroundImageURL) {
+                AsyncImage(url: url) { phase in
+                    if case .success(let img) = phase {
+                        img.resizable().scaledToFit().frame(maxWidth: .infinity)
+                    } else {
+                        LinearGradient(colors: [Color.yellow.opacity(0.3), Color.black], startPoint: .top, endPoint: .bottom)
+                            .frame(maxWidth: .infinity).frame(height: 220)
+                    }
+                }
             } else {
-                LinearGradient(colors: [Color.yellow.opacity(0.3), Color.black], startPoint: .top, endPoint: .bottom).frame(height: 200)
+                LinearGradient(colors: [Color.yellow.opacity(0.3), Color.black], startPoint: .top, endPoint: .bottom)
+                    .frame(maxWidth: .infinity).frame(height: 220)
             }
         }
+        .frame(maxWidth: .infinity)
     }
     
     private var profileHeaderSection: some View {
@@ -345,6 +383,14 @@ struct PublicProfileView: View {
                 Circle().fill(Color.black).frame(width: 120, height: 120).overlay(Circle().stroke(Color.yellow, lineWidth: 4))
                 if let data = profile.profileImageData, let uiImage = UIImage(data: data) {
                     Image(uiImage: uiImage).resizable().scaledToFill().frame(width: 110, height: 110).clipShape(Circle())
+                } else if !profile.profileImageURL.isEmpty, let url = URL(string: profile.profileImageURL) {
+                    AsyncImage(url: url) { phase in
+                        if case .success(let img) = phase {
+                            img.resizable().scaledToFill().frame(width: 110, height: 110).clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.fill").font(.system(size: 50)).foregroundColor(.yellow)
+                        }
+                    }
                 } else {
                     Image(systemName: "person.fill").font(.system(size: 50)).foregroundColor(.yellow)
                 }
@@ -380,9 +426,18 @@ struct PublicProfileView: View {
     private var statsSection: some View {
         HStack(spacing: 20) {
             statBox(icon: "calendar.badge.plus", count: userEvents.count, label: "Events")
-            statBox(icon: "photo.fill", count: userPhotos.count, label: "Photos")
-            statBox(icon: "wrench.and.screwdriver.fill", count: userBikeProgress.count, label: "Updates")
+            photoStatBox
+            statBox(icon: "wrench.and.screwdriver.fill", count: userBikeProgress.count, label: "Builds")
         }.padding().background(Color.white.opacity(0.05)).cornerRadius(15).padding(.bottom, 15)
+    }
+
+    private var photoStatBox: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "photo.fill").font(.title2).foregroundColor(.yellow)
+            Text("\(profile.photosStoredTotal)/\(UserProfile.totalPhotoLimit)")
+                .font(.title3.bold()).foregroundColor(.white)
+            Text("Photos").font(.caption2).foregroundColor(.gray)
+        }.frame(maxWidth: .infinity)
     }
     
     private func statBox(icon: String, count: Int, label: String) -> some View {
@@ -409,10 +464,10 @@ struct PublicProfileView: View {
                 VStack(alignment: .leading, spacing: 15) {
                     sectionHeader(icon: "link", title: "CONNECT")
                     HStack(spacing: 15) {
-                        if !profile.instagramHandle.isEmpty { socialButton(icon: "camera.fill", color: .purple, handle: "@\(profile.instagramHandle)", url: "https://instagram.com/\(profile.instagramHandle)") }
-                        if !profile.tiktokHandle.isEmpty { socialButton(icon: "music.note", color: .pink, handle: "@\(profile.tiktokHandle)", url: "https://tiktok.com/@\(profile.tiktokHandle)") }
-                        if !profile.youtubeChannel.isEmpty { socialButton(icon: "play.rectangle.fill", color: .red, handle: profile.youtubeChannel, url: "https://youtube.com/@\(profile.youtubeChannel)") }
-                        if !profile.facebookHandle.isEmpty { socialButton(icon: "person.2.fill", color: .blue, handle: "@\(profile.facebookHandle)", url: "https://facebook.com/\(profile.facebookHandle)") }
+                        if !profile.instagramHandle.isEmpty { socialButton(icon: "camera.fill", color: .purple, handle: "Instagram", url: "https://instagram.com/\(profile.instagramHandle)") }
+                        if !profile.tiktokHandle.isEmpty { socialButton(icon: "music.note", color: .pink, handle: "TikTok", url: "https://tiktok.com/@\(profile.tiktokHandle)") }
+                        if !profile.youtubeChannel.isEmpty { socialButton(icon: "play.rectangle.fill", color: .red, handle: "YouTube", url: "https://youtube.com/@\(profile.youtubeChannel)") }
+                        if !profile.facebookHandle.isEmpty { socialButton(icon: "person.2.fill", color: .blue, handle: "Facebook", url: profile.facebookHandle.hasPrefix("http") ? profile.facebookHandle : "https://facebook.com/\(profile.facebookHandle)") }
                     }
                 }.padding().background(Color.white.opacity(0.05)).cornerRadius(15).padding(.bottom, 15)
             }

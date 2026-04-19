@@ -21,7 +21,7 @@ struct NearbyEventsView: View {
     enum TimeFilter: String, CaseIterable {
         case today = "Today"
         case thisWeek = "This Week"
-        case nextMonth = "Next Month"
+        case nextMonth = "Month"
         case all = "All Upcoming"
         var displayName: String { rawValue }
     }
@@ -351,6 +351,7 @@ struct NearbyEventDetailView: View {
     @State private var showingWeather = false
     @State private var showingNavigationOptions = false
     @State private var showingShare = false
+    @State private var showingReport = false
 
     var venueName: String {
         let parts = event.locationName.split(separator: "|").map { String($0) }
@@ -482,8 +483,30 @@ struct NearbyEventDetailView: View {
                     }
                     .padding(.horizontal)
 
-                    Text("Posted by \(event.postedByName)")
-                        .font(.caption).foregroundColor(.gray).padding(.horizontal)
+                    // POSTED BY — tappable profile link
+                    NavigationLink(destination: PostedByProfileView(
+                        userID: event.postedByUserID,
+                        posterName: event.postedByName
+                    )) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.title3).foregroundColor(.yellow)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Posted by")
+                                    .font(.caption).foregroundColor(.gray)
+                                Text(event.postedByName.isEmpty ? "Member" : event.postedByName)
+                                    .font(.subheadline.bold()).foregroundColor(.yellow)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption).foregroundColor(.yellow.opacity(0.6))
+                        }
+                        .padding(12)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(10)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.yellow.opacity(0.3), lineWidth: 1))
+                    }
+                    .padding(.horizontal)
                 }
                 .padding(.top, 20).padding(.bottom, 40)
             }
@@ -497,10 +520,22 @@ struct NearbyEventDetailView: View {
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingShare = true }) {
-                    Image(systemName: "square.and.arrow.up").font(.title3).foregroundColor(.yellow)
+                HStack(spacing: 4) {
+                    Button(action: { showingReport = true }) {
+                        Image(systemName: "flag")
+                            .font(.title3).foregroundColor(.red.opacity(0.8))
+                    }
+                    Button(action: { showingShare = true }) {
+                        Image(systemName: "square.and.arrow.up").font(.title3).foregroundColor(.yellow)
+                    }
                 }
             }
+        }
+        .sheet(isPresented: $showingReport) {
+            ReportEventView(
+                eventID: event.id.uuidString,
+                eventTitle: event.title
+            )
         }
         .sheet(isPresented: $showingShare) {
             SupabaseEventShareView(

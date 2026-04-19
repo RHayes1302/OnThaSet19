@@ -8,6 +8,7 @@
 import SwiftUI
 import StoreKit
 import SwiftData
+import AuthenticationServices
 
 struct PaymentSelectionView: View {
     @Environment(\.dismiss) var dismiss
@@ -18,7 +19,8 @@ struct PaymentSelectionView: View {
 
     @State private var showingError = false
     @State private var errorMessage = ""
-    @State private var showingCreateProfile = false
+    @State private var showingSignIn = false
+    @State private var pendingSubscriptionAfterSignIn = false
 
     private var currentProfile: UserProfile? { profiles.first }
 
@@ -215,20 +217,45 @@ struct PaymentSelectionView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingCreateProfile) {
-            CreateProfileView { name, email in
-                let newProfile = UserProfile(
-                    appleUserID: "device-\(UUID().uuidString)",
-                    email: email.isEmpty ? "rider@onthaset.com" : email
-                )
-                newProfile.displayName = name
-                newProfile.hasActiveSubscription = true
-                newProfile.subscriptionStartDate = Date()
-                modelContext.insert(newProfile)
-                try? modelContext.save()
-                print("✅ Profile created after subscription: \(name)")
-                dismiss()
-                shouldNavigateToPost = true
+        .sheet(isPresented: $showingSignIn) {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                VStack(spacing: 30) {
+                    Spacer()
+                    ZStack {
+                        Image(systemName: "shield.fill")
+                            .font(.system(size: 100))
+                            .foregroundColor(.yellow)
+                        VStack(spacing: -2) {
+                            Text("ON").font(.system(size: 16, weight: .black))
+                            Text("THA").font(.system(size: 12, weight: .black))
+                            Text("SET").font(.system(size: 20, weight: .black))
+                        }
+                        .foregroundColor(.black).offset(y: -4)
+                    }
+                    VStack(spacing: 8) {
+                        Text("SIGN IN TO CONTINUE")
+                            .font(.title2.bold()).foregroundColor(.white)
+                        Text("Sign in with Apple to activate your subscription and start posting events.")
+                            .font(.subheadline).foregroundColor(.gray)
+                            .multilineTextAlignment(.center).padding(.horizontal, 40)
+                    }
+                    Spacer()
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.email, .fullName]
+                    } onCompletion: { result in
+                        switch result {
+                        case .success(let auth):
+                            handlePostPurchaseSignIn(auth)
+                        case .failure(let error):
+                            print("❌ Sign in failed: \(error.localizedDescription)")
+                        }
+                    }
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 50)
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 50)
+                }
             }
         }
     }
@@ -252,8 +279,9 @@ struct PaymentSelectionView: View {
                         dismiss()
                         shouldNavigateToPost = true
                     } else {
-                        // No profile — show setup screen first
-                        showingCreateProfile = true
+                        // No profile — show real Sign in with Apple
+                        pendingSubscriptionAfterSignIn = true
+                        showingSignIn = true
                     }
                 } else {
                     // Single post — no profile needed
@@ -264,6 +292,70 @@ struct PaymentSelectionView: View {
         } catch {
             errorMessage = error.localizedDescription
             showingError = true
+        }
+    }
+
+    // MARK: - Post-Purchase Sign In Handler
+
+    private func handlePostPurchaseSignIn(_ authorization: ASAuthorization) {
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else { return }
+
+        let userID = credential.user
+        let email = credential.email ?? "no-email@placeholder.com"
+        let displayName = [
+            credential.fullName?.givenName,
+            credential.fullName?.familyName
+        ].compactMap { $0 }.joined(separator: " ")
+
+        Task {
+            // Save to Supabase
+            do {
+                let existing: [[String: String]] = try await supabase
+                    .from("users")
+                    .select("apple_user_id")
+                    .eq("apple_user_id", value: userID)
+                    .execute()
+                    .value
+
+                if existing.isEmpty {
+                    try await supabase
+                        .from("users")
+                        .insert([
+                            "apple_user_id": userID,
+                            "email": email,
+                            "display_name": displayName
+                        ])
+                        .execute()
+                }
+            } catch {
+                print("❌ Supabase error: \(error)")
+            }
+
+            // Save locally with subscription active
+            let descriptor = FetchDescriptor<UserProfile>(
+                predicate: #Predicate { $0.appleUserID == userID }
+            )
+            if let existing = try? modelContext.fetch(descriptor), existing.isEmpty {
+                let profile = UserProfile(appleUserID: userID, email: email)
+                if !displayName.isEmpty { profile.displayName = displayName }
+                if pendingSubscriptionAfterSignIn {
+                    profile.hasActiveSubscription = true
+                    profile.subscriptionStartDate = Date()
+                }
+                modelContext.insert(profile)
+                try? modelContext.save()
+                print("✅ Profile created with subscription after Apple Sign In")
+            } else if let profile = try? modelContext.fetch(descriptor).first,
+                      pendingSubscriptionAfterSignIn {
+                profile.hasActiveSubscription = true
+                profile.subscriptionStartDate = Date()
+                try? modelContext.save()
+            }
+
+            showingSignIn = false
+            pendingSubscriptionAfterSignIn = false
+            dismiss()
+            shouldNavigateToPost = true
         }
     }
 }

@@ -24,15 +24,48 @@ struct UploadEventPhotoView: View {
     @State private var selectedImages: [UIImage] = []
     
     @State private var showingSuccessAlert = false
+    @State private var isSaving = false
+    @State private var uploadError = ""
+    @State private var showingError = false
     
     private var currentProfile: UserProfile? {
         profiles.first
     }
     
     private var canSave: Bool {
-        !eventName.isEmpty &&
-        !location.isEmpty &&
-        !selectedImages.isEmpty
+        guard currentProfile != nil else { return false }
+        return !eventName.isEmpty &&
+               !location.isEmpty &&
+               !selectedImages.isEmpty
+    }
+
+    private var photoLimitBanner: some View {
+        Group {
+            if let profile = currentProfile, profile.hasActiveSubscription {
+                let monthly = profile.remainingPhotosThisMonth()
+                let total = profile.remainingPhotoSlots()
+                let atLimit = monthly == 0 || total == 0
+
+                HStack(spacing: 8) {
+                    Image(systemName: atLimit ? "exclamationmark.circle.fill" : "photo.stack")
+                        .foregroundColor(atLimit ? .red : .yellow)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(atLimit ? "Photo limit reached" : "Photo storage")
+                            .font(.caption.bold())
+                            .foregroundColor(atLimit ? .red : .white)
+                        Text("\(monthly) uploads left this month  •  \(total)/\(UserProfile.totalPhotoLimit) slots used")
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .background(atLimit ? Color.red.opacity(0.1) : Color.white.opacity(0.05))
+                .cornerRadius(8)
+                .overlay(RoundedRectangle(cornerRadius: 8)
+                    .stroke(atLimit ? Color.red.opacity(0.3) : Color.yellow.opacity(0.2), lineWidth: 1))
+            }
+        }
     }
     
     var body: some View {
@@ -41,6 +74,7 @@ struct UploadEventPhotoView: View {
             
             ScrollView {
                 VStack(spacing: 25) {
+                    photoLimitBanner
                     headerSection
                     eventInfoSection
                     photosSection
@@ -58,8 +92,24 @@ struct UploadEventPhotoView: View {
                     .foregroundColor(.yellow)
             }
         }
+        .overlay {
+            if isSaving {
+                ZStack {
+                    Color.black.opacity(0.6).ignoresSafeArea()
+                    VStack(spacing: 15) {
+                        ProgressView().tint(.yellow).scaleEffect(1.5)
+                        Text("Uploading photos...").foregroundColor(.white)
+                    }
+                }
+            }
+        }
         .onChange(of: selectedPhotos) { _, newValue in
             loadPhotos(from: newValue)
+        }
+        .alert("Upload Failed", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(uploadError)
         }
         .alert("Success!", isPresented: $showingSuccessAlert) {
             Button("OK") { dismiss() }
@@ -141,7 +191,7 @@ struct UploadEventPhotoView: View {
                 
                 PhotosPicker(
                     selection: $selectedPhotos,
-                    maxSelectionCount: 10,
+                    maxSelectionCount: min(10, currentProfile?.remainingPhotoSlots() ?? 10),
                     matching: .images
                 ) {
                     Label("Add Photos", systemImage: "plus.circle.fill")
@@ -222,25 +272,30 @@ struct UploadEventPhotoView: View {
             Text("Caption (Optional)")
                 .font(.caption.bold())
                 .foregroundColor(.yellow)
-            
-            TextEditor(text: $caption)
-                .frame(height: 100)
-                .padding(8)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(8)
-                .foregroundColor(.white)
-                .overlay(
-                    Group {
-                        if caption.isEmpty {
-                            Text("Add a caption for your photos...")
-                                .foregroundColor(.gray.opacity(0.5))
-                                .padding(.leading, 12)
-                                .padding(.top, 16)
-                                .allowsHitTesting(false)
-                        }
-                    },
-                    alignment: .topLeading
-                )
+
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 100)
+
+                if caption.isEmpty {
+                    Text("Add a caption for your photos...")
+                        .foregroundColor(.gray.opacity(0.5))
+                        .font(.body)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .allowsHitTesting(false)
+                }
+
+                TextEditor(text: $caption)
+                    .frame(height: 100)
+                    .padding(8)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .foregroundColor(.white)
+                    .colorScheme(.dark)
+            }
+            .cornerRadius(8)
         }
     }
     
@@ -277,37 +332,62 @@ struct UploadEventPhotoView: View {
     }
     
     private func savePhotos() {
-        guard let profile = currentProfile else { return }
-        
-        // Save each photo as a separate EventPhoto entry
-        for (index, image) in selectedImages.enumerated() {
-            let filename = "event_photo_\(UUID().uuidString).jpg"
-            saveImage(image, filename: filename)
-            
-            let eventPhoto = EventPhoto(
-                eventName: eventName,
-                eventDate: eventDate,
-                location: location,
-                caption: caption.isEmpty ? "Photo \(index + 1)" : caption,
-                photoFileName: filename,
-                userID: profile.appleUserID
-            )
-            
-            modelContext.insert(eventPhoto)
-        }
-        
-        // Update profile stats
-        profile.totalPhotosPosted += selectedImages.count
-        
-        try? modelContext.save()
-        
-        showingSuccessAlert = true
+        Task { await performSave() }
     }
-    
-    private func saveImage(_ image: UIImage, filename: String) {
-        guard let data = image.jpegData(compressionQuality: 0.8) else { return }
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let filePath = documentsPath.appendingPathComponent(filename)
-        try? data.write(to: filePath)
+
+    private func performSave() async {
+        guard let profile = currentProfile else { return }
+        await MainActor.run { isSaving = true }
+
+        var savedCount = 0
+        for (index, image) in selectedImages.enumerated() {
+            guard let data = image.jpegData(compressionQuality: 0.8) else { continue }
+            let filename = "event_photo_\(profile.appleUserID)_\(UUID().uuidString).jpg"
+
+            do {
+                let photoURL = try await SupabaseManager.shared.uploadImage(
+                    data: data, bucket: "event-photos", fileName: filename
+                )
+
+                // Save metadata to Supabase so other users can see it
+                await SupabaseManager.shared.saveEventPhotoMetadata(
+                    userID: profile.appleUserID,
+                    eventName: eventName,
+                    eventDate: eventDate,
+                    location: location,
+                    caption: caption.isEmpty ? "Photo \(index + 1)" : caption,
+                    photoURL: photoURL
+                )
+
+                let eventPhoto = EventPhoto(
+                    eventName: eventName,
+                    eventDate: eventDate,
+                    location: location,
+                    caption: caption.isEmpty ? "Photo \(index + 1)" : caption,
+                    photoFileName: photoURL,
+                    userID: profile.appleUserID
+                )
+                await MainActor.run { modelContext.insert(eventPhoto) }
+                savedCount += 1
+                print("✅ Event photo uploaded: \(photoURL)")
+            } catch {
+                print("❌ Event photo upload failed: \(error)")
+            }
+        }
+
+        await MainActor.run {
+            if savedCount > 0 {
+                profile.totalPhotosPosted += savedCount
+                // Increment photo limits if the new fields are available
+                for _ in 0..<savedCount { profile.incrementPhotoCount() }
+                try? modelContext.save()
+                isSaving = false
+                showingSuccessAlert = true
+            } else {
+                isSaving = false
+                uploadError = "Failed to upload photos. Please try again."
+                showingError = true
+            }
+        }
     }
 }

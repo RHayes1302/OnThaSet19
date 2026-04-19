@@ -7,22 +7,32 @@
 
 import SwiftUI
 import SwiftData
+import AuthenticationServices
 
 struct MyAccountView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var authService: AuthService
     @Query private var profiles: [UserProfile]
     @Query(sort: \Event.date, order: .reverse) private var allEvents: [Event]
 
     @State private var showingEditProfile = false
     @State private var showingPostEvent = false
     @State private var showingUploadPhoto = false
+    @State private var isSigningIn = false
     @State private var showingUploadBikeProgress = false
     @State private var showingSettings = false
-    @State private var showingCreateProfile = false
+    @State private var showingWelcomeSetup = false
+    @State private var showingPaymentSheet = false
+    @StateObject private var storeManager = StoreKitManager()
 
     private var currentProfile: UserProfile? {
         profiles.first
+    }
+
+    private var isNewUser: Bool {
+        guard let profile = currentProfile else { return false }
+        return !profile.hasCompletedSetup
     }
 
     var body: some View {
@@ -60,6 +70,11 @@ struct MyAccountView: View {
                         }
                     }
                 }
+                .sheet(isPresented: $showingWelcomeSetup) {
+                    WelcomeSetupView(profile: profile, onComplete: {
+                        showingWelcomeSetup = false
+                    })
+                }
                 .sheet(isPresented: $showingEditProfile) {
                     NavigationStack {
                         EditProfileView(profile: profile)
@@ -85,8 +100,23 @@ struct MyAccountView: View {
                         UploadBikeProgressView()
                     }
                 }
+                .sheet(isPresented: $showingPaymentSheet) {
+                    PaymentSelectionView(shouldNavigateToPost: $showingPostEvent)
+                }
             } else {
                 noProfileView
+            }
+        }
+        .onAppear {
+            if isNewUser {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    showingWelcomeSetup = true
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showWelcomeSetup)) { _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                showingWelcomeSetup = true
             }
         }
     }
@@ -127,24 +157,25 @@ struct MyAccountView: View {
                 Spacer()
 
                 VStack(spacing: 15) {
-                    Button(action: { showingCreateProfile = true }) {
-                        HStack {
-                            Image(systemName: "person.badge.plus")
-                            Text("SET UP PROFILE").fontWeight(.bold)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.yellow)
-                        .foregroundColor(.black)
-                        .cornerRadius(12)
+                    if isSigningIn {
+                        ProgressView()
+                            .tint(.yellow)
+                            .padding(.bottom, 8)
                     }
+                    SignInWithAppleButton(.signIn) { request in
+                        request.requestedScopes = [.email, .fullName]
+                    } onCompletion: { result in
+                        switch result {
+                        case .success(let authorization):
+                            handleAppleSignIn(authorization)
+                        case .failure(let error):
+                            print("❌ Sign in failed: \(error.localizedDescription)")
+                        }
+                    }
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 50)
                     .padding(.horizontal, 40)
-
-                    Text("Use Apple Sign In on your real iPhone for full access")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
+                    .disabled(isSigningIn)
                 }
                 .padding(.bottom, 50)
             }
@@ -159,17 +190,61 @@ struct MyAccountView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingCreateProfile) {
-            CreateProfileView { name, email in
-                let profile = UserProfile(
-                    appleUserID: "device-\(UUID().uuidString)",
-                    email: email
-                )
-                profile.displayName = name
-                profile.hasActiveSubscription = true
+    }
+
+    // MARK: - Apple Sign In Handler
+
+    private func handleAppleSignIn(_ authorization: ASAuthorization) {
+        guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else { return }
+
+        let userID = credential.user
+        let email = credential.email ?? "no-email@placeholder.com"
+        let displayName = [
+            credential.fullName?.givenName,
+            credential.fullName?.familyName
+        ].compactMap { $0 }.joined(separator: " ")
+
+        isSigningIn = true
+
+        Task {
+            // Save to Supabase
+            do {
+                let existing: [[String: String]] = try await supabase
+                    .from("users")
+                    .select("apple_user_id")
+                    .eq("apple_user_id", value: userID)
+                    .execute()
+                    .value
+
+                if existing.isEmpty {
+                    try await supabase
+                        .from("users")
+                        .insert([
+                            "apple_user_id": userID,
+                            "email": email,
+                            "display_name": displayName
+                        ])
+                        .execute()
+                }
+            } catch {
+                print("❌ Supabase error: \(error)")
+            }
+
+            // Save locally
+            let descriptor = FetchDescriptor<UserProfile>(
+                predicate: #Predicate { $0.appleUserID == userID }
+            )
+            if let existing = try? modelContext.fetch(descriptor), existing.isEmpty {
+                let profile = UserProfile(appleUserID: userID, email: email)
+                if !displayName.isEmpty { profile.displayName = displayName }
                 modelContext.insert(profile)
                 try? modelContext.save()
+                print("✅ Profile created via Apple Sign In")
             }
+
+            // Update auth state so the UI refreshes
+            authService.loginWithApple(userID: userID, email: email)
+            isSigningIn = false
         }
     }
 
@@ -177,7 +252,7 @@ struct MyAccountView: View {
 
     private var actionButtonsOverlay: some View {
         VStack(spacing: 12) {
-            if let profile = currentProfile, profile.hasActiveSubscription {
+            if currentProfile != nil {
                 subscriberActionButtons
             }
         }
@@ -194,19 +269,37 @@ struct MyAccountView: View {
 
     private var postEventButton: some View {
         actionButton(icon: "plus.circle.fill", label: "Post Event", color: .yellow) {
-            showingPostEvent = true
+            handlePostAttempt()
         }
     }
 
     private var uploadPhotoButton: some View {
         actionButton(icon: "camera.fill", label: "Event Photo", color: .purple) {
-            showingUploadPhoto = true
+            handlePostAttempt(for: .photo)
         }
     }
 
     private var uploadBikeButton: some View {
-        actionButton(icon: "wrench.and.screwdriver.fill", label: "Bike Update", color: .orange) {
-            showingUploadBikeProgress = true
+        actionButton(icon: "wrench.and.screwdriver.fill", label: "Bike Build", color: .orange) {
+            handlePostAttempt(for: .bike)
+        }
+    }
+
+    enum PostType { case event, photo, bike }
+
+    private func handlePostAttempt(for type: PostType = .event) {
+        guard let profile = currentProfile else { showingPaymentSheet = true; return }
+        let hasSubscription = storeManager.hasActiveSubscription || profile.hasActiveSubscription
+        let hasSinglePost = storeManager.purchasedProductIDs.contains("com.onthaset.singlepost")
+
+        if hasSubscription || hasSinglePost {
+            switch type {
+            case .event: showingPostEvent = true
+            case .photo: showingUploadPhoto = true
+            case .bike:  showingUploadBikeProgress = true
+            }
+        } else {
+            showingPaymentSheet = true
         }
     }
 
@@ -234,101 +327,6 @@ struct MyAccountView: View {
     }
 }
 
-// MARK: - Create Profile View
-
-struct CreateProfileView: View {
-    @Environment(\.dismiss) private var dismiss
-    let onSave: (String, String) -> Void
-
-    @State private var displayName = ""
-    @State private var email = ""
-
-    var isValid: Bool {
-        !displayName.trimmingCharacters(in: .whitespaces).isEmpty
-    }
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-
-                VStack(spacing: 30) {
-                    Spacer()
-
-                    ZStack {
-                        Image(systemName: "shield.fill")
-                            .font(.system(size: 80))
-                            .foregroundColor(.yellow)
-                        VStack(spacing: -2) {
-                            Text("ON").font(.system(size: 13, weight: .black))
-                            Text("THA").font(.system(size: 10, weight: .black))
-                            Text("SET").font(.system(size: 16, weight: .black))
-                        }
-                        .foregroundColor(.black)
-                        .offset(y: -3)
-                    }
-
-                    Text("CREATE YOUR PROFILE")
-                        .font(.title2.bold())
-                        .foregroundColor(.white)
-
-                    VStack(spacing: 15) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("RIDER NAME")
-                                .font(.caption.bold())
-                                .foregroundColor(.yellow)
-                            TextField("Your name or handle", text: $displayName)
-                                .padding()
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
-                        }
-
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("EMAIL (OPTIONAL)")
-                                .font(.caption.bold())
-                                .foregroundColor(.yellow)
-                            TextField("your@email.com", text: $email)
-                                .padding()
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(8)
-                                .foregroundColor(.white)
-                                .keyboardType(.emailAddress)
-                                .textInputAutocapitalization(.never)
-                        }
-                    }
-                    .padding(.horizontal, 30)
-
-                    Spacer()
-
-                    Button(action: {
-                        let emailToUse = email.isEmpty ? "rider@onthaset.com" : email
-                        onSave(displayName, emailToUse)
-                        dismiss()
-                    }) {
-                        Text("LET'S RIDE")
-                            .font(.headline.bold())
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(isValid ? Color.yellow : Color.gray)
-                            .cornerRadius(12)
-                    }
-                    .disabled(!isValid)
-                    .padding(.horizontal, 30)
-                    .padding(.bottom, 40)
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(.yellow)
-                }
-            }
-        }
-    }
-}
 
 // MARK: - Settings View
 

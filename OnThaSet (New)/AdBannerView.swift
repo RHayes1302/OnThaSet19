@@ -32,11 +32,11 @@ struct AdBannerContentView: View {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let image):
-                                image.resizable().scaledToFill()
-                                    .frame(width: 52, height: 52)
+                                image.resizable().scaledToFit()
+                                    .frame(width: 64, height: 64)
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
                             case .empty:
-                                ProgressView().frame(width: 52, height: 52)
+                                ProgressView().frame(width: 64, height: 64)
                             default:
                                 defaultBadge
                             }
@@ -85,7 +85,9 @@ struct AdBannerContentView: View {
 
                 VStack(spacing: 4) {
                     if let phone = ad.phone, !phone.isEmpty {
-                        Label("Call", systemImage: "phone.fill")
+                        let isAppt = ad.notes?.contains("appointment_only") == true
+                        Label(isAppt ? "Schedule" : "Call",
+                              systemImage: isAppt ? "calendar.badge.plus" : "phone.fill")
                             .font(.system(size: 10, weight: .bold)).foregroundColor(.black)
                             .padding(.horizontal, 8).padding(.vertical, 5)
                             .background(accentColor).cornerRadius(5)
@@ -96,7 +98,7 @@ struct AdBannerContentView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
         }
-        .frame(height: ad.plan == "basic" ? 90 : 100)
+        .frame(height: ad.plan == "basic" ? 100 : 110)
     }
 
     var defaultBadge: some View {
@@ -107,7 +109,7 @@ struct AdBannerContentView: View {
                 .padding(.horizontal, 5).padding(.vertical, 2)
                 .background(accentColor).cornerRadius(3)
         }
-        .frame(width: 52)
+        .frame(width: 64)
     }
 
     var borderColor: Color {
@@ -144,25 +146,64 @@ struct AdBannerContentView: View {
 
     var accentColor: Color {
         switch ad.category {
-        case "lawyer": return .yellow
-        case "biker_bar": return Color(red: 0.8, green: 0.2, blue: 0.2)
-        default: return Color(red: 1.0, green: 0.6, blue: 0.0)
+        case "lawyer":          return .yellow
+        case "biker_bar":       return Color(red: 0.8, green: 0.2, blue: 0.2)
+        case "tattoo":          return Color(red: 0.5, green: 0.0, blue: 0.5)
+        case "entertainer":     return Color(red: 0.9, green: 0.4, blue: 0.0)
+        case "sewing":          return Color(red: 0.2, green: 0.6, blue: 0.5)
+        case "custom_paint":    return Color(red: 0.0, green: 0.5, blue: 0.9)
+        case "leather_apparel": return Color(red: 0.4, green: 0.2, blue: 0.0)
+        case "towing":          return Color(red: 0.9, green: 0.7, blue: 0.0)
+        case "photographer":    return Color(red: 0.2, green: 0.2, blue: 0.8)
+        case "hotel":           return Color(red: 0.0, green: 0.6, blue: 0.4)
+        case "food_truck":      return Color(red: 0.9, green: 0.3, blue: 0.1)
+        case "detailing":       return Color(red: 0.0, green: 0.7, blue: 0.7)
+        case "dealer":          return Color(red: 0.1, green: 0.5, blue: 0.1)
+        case "embroidery":      return Color(red: 0.7, green: 0.3, blue: 0.6)
+        case "barber":          return Color(red: 0.2, green: 0.5, blue: 0.8)
+        default:                return Color(red: 1.0, green: 0.6, blue: 0.0)
         }
     }
 
     var categoryIcon: String {
         switch ad.category {
-        case "lawyer": return "⚖️"
-        case "biker_bar": return "🍺"
-        default: return "🏍️"
+        case "lawyer":          return "⚖️"
+        case "biker_bar":       return "🍺"
+        case "tattoo":          return "🖋️"
+        case "entertainer":     return "🎭"
+        case "sewing":          return "🪡"
+        case "custom_paint":    return "🎨"
+        case "leather_apparel": return "🧥"
+        case "towing":          return "🚗"
+        case "photographer":    return "📸"
+        case "hotel":           return "🏨"
+        case "food_truck":      return "🍔"
+        case "detailing":       return "✨"
+        case "dealer":          return "🏪"
+        case "embroidery":      return "🧵"
+        case "barber":          return "💈"
+        default:                return "🏍️"
         }
     }
 
     var categoryLabel: String {
         switch ad.category {
-        case "lawyer": return "LEGAL"
-        case "biker_bar": return "BAR"
-        default: return "SHOP"
+        case "lawyer":          return "LEGAL"
+        case "biker_bar":       return "BAR"
+        case "tattoo":          return "TATTOO"
+        case "entertainer":     return "ENTERTAIN"
+        case "sewing":          return "SEWING"
+        case "custom_paint":    return "PAINT"
+        case "leather_apparel": return "APPAREL"
+        case "towing":          return "TOWING"
+        case "photographer":    return "PHOTO"
+        case "hotel":           return "LODGING"
+        case "food_truck":      return "FOOD"
+        case "detailing":       return "DETAIL"
+        case "dealer":          return "DEALER"
+        case "embroidery":      return "EMBROIDER"
+        case "barber":          return "BARBER"
+        default:                return "SHOP"
         }
     }
 }
@@ -175,17 +216,43 @@ struct PremiumAdBannerView: View {
 
     var accentColor: Color {
         switch ad.category {
-        case "lawyer": return .yellow
-        case "biker_bar": return Color(red: 0.8, green: 0.2, blue: 0.2)
-        default: return Color(red: 1.0, green: 0.6, blue: 0.0)
+        case "lawyer":          return .yellow
+        case "biker_bar":       return Color(red: 0.8, green: 0.2, blue: 0.2)
+        case "tattoo":          return Color(red: 0.5, green: 0.0, blue: 0.5)
+        case "entertainer":     return Color(red: 0.9, green: 0.4, blue: 0.0)
+        case "sewing":          return Color(red: 0.2, green: 0.6, blue: 0.5)
+        case "custom_paint":    return Color(red: 0.0, green: 0.5, blue: 0.9)
+        case "leather_apparel": return Color(red: 0.4, green: 0.2, blue: 0.0)
+        case "towing":          return Color(red: 0.9, green: 0.7, blue: 0.0)
+        case "photographer":    return Color(red: 0.2, green: 0.2, blue: 0.8)
+        case "hotel":           return Color(red: 0.0, green: 0.6, blue: 0.4)
+        case "food_truck":      return Color(red: 0.9, green: 0.3, blue: 0.1)
+        case "detailing":       return Color(red: 0.0, green: 0.7, blue: 0.7)
+        case "dealer":          return Color(red: 0.1, green: 0.5, blue: 0.1)
+        case "embroidery":      return Color(red: 0.7, green: 0.3, blue: 0.6)
+        case "barber":          return Color(red: 0.2, green: 0.5, blue: 0.8)
+        default:                return Color(red: 1.0, green: 0.6, blue: 0.0)
         }
     }
 
     var categoryIcon: String {
         switch ad.category {
-        case "lawyer": return "⚖️"
-        case "biker_bar": return "🍺"
-        default: return "🏍️"
+        case "lawyer":          return "⚖️"
+        case "biker_bar":       return "🍺"
+        case "tattoo":          return "🖋️"
+        case "entertainer":     return "🎭"
+        case "sewing":          return "🪡"
+        case "custom_paint":    return "🎨"
+        case "leather_apparel": return "🧥"
+        case "towing":          return "🚗"
+        case "photographer":    return "📸"
+        case "hotel":           return "🏨"
+        case "food_truck":      return "🍔"
+        case "detailing":       return "✨"
+        case "dealer":          return "🏪"
+        case "embroidery":      return "🧵"
+        case "barber":          return "💈"
+        default:                return "🏍️"
         }
     }
 
@@ -204,15 +271,15 @@ struct PremiumAdBannerView: View {
                         AsyncImage(url: url) { phase in
                             switch phase {
                             case .success(let image):
-                                image.resizable().scaledToFill()
-                                    .frame(width: 60, height: 60)
+                                image.resizable().scaledToFit()
+                                    .frame(width: 70, height: 70)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             default:
-                                Text(categoryIcon).font(.system(size: 36)).frame(width: 60, height: 60)
+                                Text(categoryIcon).font(.system(size: 36)).frame(width: 70, height: 70)
                             }
                         }
                     } else {
-                        Text(categoryIcon).font(.system(size: 36)).frame(width: 60, height: 60)
+                        Text(categoryIcon).font(.system(size: 36)).frame(width: 70, height: 70)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -243,7 +310,7 @@ struct PremiumAdBannerView: View {
                 }
                 .padding(.horizontal, 14).padding(.vertical, 12)
             }
-            .frame(height: 100)
+            .frame(height: 110)
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showingDetail) { AdDetailView(ad: ad) }
@@ -282,9 +349,11 @@ struct PremiumAdStripView: View {
     private func startTimer() {
         guard premiumAds.count > 1 else { return }
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 8.0, repeats: true) { _ in
+        let t = Timer(timeInterval: 8.0, repeats: true) { _ in
             withAnimation { currentIndex = (currentIndex + 1) % premiumAds.count }
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func stopTimer() { timer?.invalidate(); timer = nil }
@@ -295,28 +364,68 @@ struct PremiumAdStripView: View {
 struct AdDetailView: View {
     let ad: SupabaseAd
     @Environment(\.dismiss) var dismiss
+    @State private var showingEditPin = false
 
     var accentColor: Color {
         switch ad.category {
-        case "lawyer": return .yellow
-        case "biker_bar": return Color(red: 0.8, green: 0.2, blue: 0.2)
-        default: return Color(red: 1.0, green: 0.6, blue: 0.0)
+        case "lawyer":          return .yellow
+        case "biker_bar":       return Color(red: 0.8, green: 0.2, blue: 0.2)
+        case "tattoo":          return Color(red: 0.5, green: 0.0, blue: 0.5)
+        case "entertainer":     return Color(red: 0.9, green: 0.4, blue: 0.0)
+        case "sewing":          return Color(red: 0.2, green: 0.6, blue: 0.5)
+        case "custom_paint":    return Color(red: 0.0, green: 0.5, blue: 0.9)
+        case "leather_apparel": return Color(red: 0.4, green: 0.2, blue: 0.0)
+        case "towing":          return Color(red: 0.9, green: 0.7, blue: 0.0)
+        case "photographer":    return Color(red: 0.2, green: 0.2, blue: 0.8)
+        case "hotel":           return Color(red: 0.0, green: 0.6, blue: 0.4)
+        case "food_truck":      return Color(red: 0.9, green: 0.3, blue: 0.1)
+        case "detailing":       return Color(red: 0.0, green: 0.7, blue: 0.7)
+        case "dealer":          return Color(red: 0.1, green: 0.5, blue: 0.1)
+        case "embroidery":      return Color(red: 0.7, green: 0.3, blue: 0.6)
+        case "barber":          return Color(red: 0.2, green: 0.5, blue: 0.8)
+        default:                return Color(red: 1.0, green: 0.6, blue: 0.0)
         }
     }
 
     var categoryIcon: String {
         switch ad.category {
-        case "lawyer": return "⚖️"
-        case "biker_bar": return "🍺"
-        default: return "🏍️"
+        case "lawyer":          return "⚖️"
+        case "biker_bar":       return "🍺"
+        case "tattoo":          return "🖋️"
+        case "entertainer":     return "🎭"
+        case "sewing":          return "🪡"
+        case "custom_paint":    return "🎨"
+        case "leather_apparel": return "🧥"
+        case "towing":          return "🚗"
+        case "photographer":    return "📸"
+        case "hotel":           return "🏨"
+        case "food_truck":      return "🍔"
+        case "detailing":       return "✨"
+        case "dealer":          return "🏪"
+        case "embroidery":      return "🧵"
+        case "barber":          return "💈"
+        default:                return "🏍️"
         }
     }
 
     var categoryLabel: String {
         switch ad.category {
-        case "lawyer": return "LEGAL SERVICES"
-        case "biker_bar": return "BIKER FRIENDLY BAR"
-        default: return "MOTORCYCLE SHOP"
+        case "lawyer":          return "LEGAL SERVICES"
+        case "biker_bar":       return "BIKER FRIENDLY BAR"
+        case "tattoo":          return "TATTOO ARTIST"
+        case "entertainer":     return "ENTERTAINER / DJ / BAND"
+        case "sewing":          return "SEWING & CUSTOM PATCHES"
+        case "custom_paint":    return "CUSTOM PAINT & BODY"
+        case "leather_apparel": return "LEATHER & APPAREL"
+        case "towing":          return "TOWING & ROADSIDE"
+        case "photographer":    return "PHOTOGRAPHER"
+        case "hotel":           return "HOTEL & LODGING"
+        case "food_truck":      return "FOOD TRUCK / CATERING"
+        case "detailing":       return "BIKE DETAILING"
+        case "dealer":          return "MOTORCYCLE DEALER"
+        case "embroidery":      return "EMBROIDERY"
+        case "barber":          return "BARBER / HAIR / BRAIDS"
+        default:                return "MOTORCYCLE SHOP"
         }
     }
 
@@ -369,10 +478,25 @@ struct AdDetailView: View {
                                 .font(.title.bold()).foregroundColor(.white).multilineTextAlignment(.center)
                             Text(ad.tagline)
                                 .font(.subheadline).foregroundColor(.gray).multilineTextAlignment(.center)
-                            Text(categoryLabel)
-                                .font(.caption.bold()).foregroundColor(.black)
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(accentColor).cornerRadius(20)
+                            HStack(spacing: 8) {
+                                Text(categoryLabel)
+                                    .font(.caption.bold()).foregroundColor(.black)
+                                    .padding(.horizontal, 12).padding(.vertical, 6)
+                                    .background(accentColor).cornerRadius(20)
+                                if ad.notes?.contains("appointment_only") == true {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "calendar.badge.plus")
+                                            .font(.caption2)
+                                        Text("By Appointment")
+                                            .font(.caption.bold())
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 10).padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.15))
+                                    .cornerRadius(20)
+                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1))
+                                }
+                            }
                         }
                         .padding(.horizontal)
 
@@ -393,14 +517,29 @@ struct AdDetailView: View {
                         .cornerRadius(15).padding(.horizontal)
 
                         VStack(spacing: 12) {
+                            let isAppointmentOnly = ad.notes?.contains("appointment_only") == true
+
                             if let phone = ad.phone, !phone.isEmpty {
                                 Button(action: { callPhone(phone) }) {
                                     HStack {
-                                        Image(systemName: "phone.fill")
-                                        Text("CALL NOW").fontWeight(.bold)
+                                        Image(systemName: isAppointmentOnly ? "calendar.badge.plus" : "phone.fill")
+                                        Text(isAppointmentOnly ? "CALL TO SCHEDULE APPOINTMENT" : "CALL NOW")
+                                            .fontWeight(.bold)
                                     }
                                     .frame(maxWidth: .infinity).padding()
                                     .background(accentColor).foregroundColor(.black).cornerRadius(12)
+                                }
+                            } else if isAppointmentOnly {
+                                // Appointment only but no phone — prompt to use website
+                                if let website = ad.websiteURL, !website.isEmpty {
+                                    Button(action: { openURL(website) }) {
+                                        HStack {
+                                            Image(systemName: "calendar.badge.plus")
+                                            Text("BOOK APPOINTMENT ONLINE").fontWeight(.bold)
+                                        }
+                                        .frame(maxWidth: .infinity).padding()
+                                        .background(accentColor).foregroundColor(.black).cornerRadius(12)
+                                    }
                                 }
                             }
                             if let address = ad.address, !address.isEmpty {
@@ -431,7 +570,17 @@ struct AdDetailView: View {
                         .padding(.horizontal)
 
                         Text("SPONSORED ADVERTISEMENT")
-                            .font(.caption2).foregroundColor(.gray.opacity(0.4)).padding(.bottom, 30)
+                            .font(.caption2).foregroundColor(.gray.opacity(0.4)).padding(.top, 8)
+
+                        // Advertiser edit button
+                        Button(action: { showingEditPin = true }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "pencil.circle")
+                                Text("Are you the advertiser? Edit this ad")
+                            }
+                            .font(.caption).foregroundColor(.gray.opacity(0.5))
+                        }
+                        .padding(.bottom, 30)
                     }
                     .padding(.top, 20)
                 }
@@ -446,6 +595,15 @@ struct AdDetailView: View {
                 ToolbarItem(placement: .principal) {
                     Text("Advertisement").font(.caption).foregroundColor(.gray)
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: { showingEditPin = true }) {
+                        Image(systemName: "pencil.circle")
+                            .foregroundColor(.yellow).font(.title3)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingEditPin) {
+                AdEditPinView(ad: ad)
             }
         }
     }
@@ -492,34 +650,51 @@ struct RotatingAdStripView: View {
 
     var body: some View {
         VStack(spacing: 6) {
+            // Header
             HStack {
                 Text("SPONSORED")
                     .font(.system(size: 9, weight: .black))
                     .foregroundColor(.gray.opacity(0.6)).kerning(1.5)
                 Spacer()
-                HStack(spacing: 4) {
-                    ForEach(0..<ads.count, id: \.self) { i in
-                        Circle()
-                            .fill(i == currentIndex ? Color.yellow : Color.gray.opacity(0.3))
-                            .frame(width: 5, height: 5)
+                if ads.count > 1 {
+                    HStack(spacing: 6) {
+                        ForEach(0..<ads.count, id: \.self) { i in
+                            Circle()
+                                .fill(i == currentIndex ? Color.yellow : Color.gray.opacity(0.3))
+                                .frame(width: i == currentIndex ? 8 : 5, height: i == currentIndex ? 8 : 5)
+                                .animation(.easeInOut(duration: 0.2), value: currentIndex)
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 2)
+            .padding(.horizontal, 16)
 
             if !ads.isEmpty {
-                Button(action: { stopTimer(); showingDetail = true }) {
-                    AdBannerContentView(ad: ads[currentIndex])
-                        .id(currentIndex)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .trailing).combined(with: .opacity),
-                            removal: .move(edge: .leading).combined(with: .opacity)
-                        ))
-                        .animation(.easeInOut(duration: 0.4), value: currentIndex)
+                TabView(selection: $currentIndex) {
+                    ForEach(ads.indices, id: \.self) { i in
+                        AdBannerContentView(ad: ads[i])
+                            .padding(.horizontal, 16)
+                            .tag(i)
+                            .onTapGesture {
+                                stopTimer()
+                                showingDetail = true
+                            }
+                    }
                 }
-                .buttonStyle(.plain)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 110)
+                .onChange(of: currentIndex) { _, _ in
+                    stopTimer()
+                    startTimer()
+                }
                 .sheet(isPresented: $showingDetail, onDismiss: { startTimer() }) {
-                    AdDetailView(ad: ads[currentIndex])
+                    AdDetailView(ad: ads[min(currentIndex, ads.count - 1)])
+                }
+
+                if ads.count > 1 {
+                    Text("Swipe to browse • Tap to view details")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.gray.opacity(0.4))
                 }
             }
         }
@@ -530,9 +705,13 @@ struct RotatingAdStripView: View {
     private func startTimer() {
         guard ads.count > 1 else { return }
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 6.0, repeats: true) { _ in
-            withAnimation { currentIndex = (currentIndex + 1) % ads.count }
+        let t = Timer(timeInterval: 6.0, repeats: true) { _ in
+            withAnimation {
+                currentIndex = (currentIndex + 1) % ads.count
+            }
         }
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
     private func stopTimer() { timer?.invalidate(); timer = nil }
@@ -550,7 +729,7 @@ struct LiveAdStripView: View {
                 EmptyView()
             } else {
                 RotatingAdStripView(ads: filteredAds)
-                    .padding(.horizontal, 40).padding(.vertical, 4)
+                    .padding(.vertical, 4)
             }
         }
         .task { await manager.fetchActiveAds() }
@@ -567,12 +746,16 @@ struct AdvertiserSignupView: View {
     @State private var selectedPlan = "basic"
     @State private var billingPreference = "monthly"
     @State private var advertiserEmail = ""
+    @State private var advertiserPin = ""
+    @State private var showPin = false
     @State private var phone = ""
     @State private var websiteURL = ""
     @State private var streetAddress = ""
     @State private var cityName = ""
     @State private var stateName = ""
     @State private var zipCode = ""
+    @State private var appointmentOnly = false
+    @State private var hideAddress = false
     @State private var isSubmitting = false
     @State private var showSuccess = false
     @State private var showError = false
@@ -584,7 +767,8 @@ struct AdvertiserSignupView: View {
     private var isFormValid: Bool {
         !businessName.trimmingCharacters(in: .whitespaces).isEmpty &&
         !tagline.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !advertiserEmail.trimmingCharacters(in: .whitespaces).isEmpty
+        !advertiserEmail.trimmingCharacters(in: .whitespaces).isEmpty &&
+        advertiserPin.count == 4
     }
 
     private var logoUploadAllowed: Bool {
@@ -771,6 +955,32 @@ struct AdvertiserSignupView: View {
                                     .keyboardType(.emailAddress)
                                     .autocapitalization(.none)
                             }
+                            formField(label: "SECURITY PIN (REQUIRED — 4 digits to edit your ad)") {
+                                HStack {
+                                    if showPin {
+                                        TextField("4-digit PIN", text: $advertiserPin)
+                                            .keyboardType(.numberPad)
+                                            .modifier(FormTextFieldStyle())
+                                            .onChange(of: advertiserPin) { _, v in
+                                                advertiserPin = String(v.filter { $0.isNumber }.prefix(4))
+                                            }
+                                    } else {
+                                        SecureField("4-digit PIN", text: $advertiserPin)
+                                            .keyboardType(.numberPad)
+                                            .modifier(FormTextFieldStyle())
+                                            .onChange(of: advertiserPin) { _, v in
+                                                advertiserPin = String(v.filter { $0.isNumber }.prefix(4))
+                                            }
+                                    }
+                                    Button(action: { showPin.toggle() }) {
+                                        Image(systemName: showPin ? "eye.slash" : "eye")
+                                            .foregroundColor(.gray).padding(.trailing, 8)
+                                    }
+                                }
+                                .background(Color.white.opacity(0.08)).cornerRadius(10)
+                                Text("You'll use this PIN to update your ad info later")
+                                    .font(.caption2).foregroundColor(.gray)
+                            }
                             formField(label: "CATEGORY") {
                                 VStack(spacing: 8) {
                                     HStack(spacing: 8) {
@@ -779,25 +989,126 @@ struct AdvertiserSignupView: View {
                                     }
                                     HStack(spacing: 8) {
                                         categoryButton(label: "🍺 Biker Friendly Bar", value: "biker_bar")
-                                        Spacer()
+                                        categoryButton(label: "🎭 Entertainer / DJ / Band", value: "entertainer")
+                                    }
+                                    HStack(spacing: 8) {
+                                        categoryButton(label: "🪡 Sewing & Patches", value: "sewing")
+                                        categoryButton(label: "🎨 Custom Paint", value: "custom_paint")
+                                    }
+                                    HStack(spacing: 8) {
+                                        categoryButton(label: "🧥 Leather & Apparel", value: "leather_apparel")
+                                        categoryButton(label: "🚗 Towing & Roadside", value: "towing")
+                                    }
+                                    HStack(spacing: 8) {
+                                        categoryButton(label: "🖋️ Tattoo Artist", value: "tattoo")
+                                        categoryButton(label: "📸 Photographer", value: "photographer")
+                                    }
+                                    HStack(spacing: 8) {
+                                        categoryButton(label: "🏨 Hotel & Lodging", value: "hotel")
+                                        categoryButton(label: "🍔 Food Truck", value: "food_truck")
+                                    }
+                                    HStack(spacing: 8) {
+                                        categoryButton(label: "✨ Detailing", value: "detailing")
+                                        categoryButton(label: "🏍️ Motorcycle Dealer", value: "dealer")
+                                    }
+                                    HStack(spacing: 8) {
+                                        categoryButton(label: "🧵 Embroidery", value: "embroidery")
+                                        categoryButton(label: "💈 Barber / Hair / Braids", value: "barber")
                                     }
                                 }
                             }
-                            formField(label: "STREET ADDRESS (OPTIONAL)") {
-                                TextField("123 Main Street", text: $streetAddress)
-                                    .modifier(FormTextFieldStyle())
-                            }
-                            HStack(spacing: 12) {
-                                formField(label: "CITY") {
-                                    TextField("City", text: $cityName).modifier(FormTextFieldStyle())
+                            // APPOINTMENT TOGGLE
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("BOOKING TYPE")
+                                    .font(.caption2.bold()).foregroundColor(.yellow).padding(.leading, 5)
+                                HStack(spacing: 12) {
+                                    Button(action: { appointmentOnly = false }) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: appointmentOnly ? "circle" : "checkmark.circle.fill")
+                                                .foregroundColor(.yellow)
+                                            Text("Walk-ins Welcome")
+                                                .font(.caption.bold())
+                                                .foregroundColor(appointmentOnly ? .gray : .white)
+                                        }
+                                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                        .background(appointmentOnly ? Color.white.opacity(0.05) : Color.yellow.opacity(0.15))
+                                        .cornerRadius(8)
+                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(appointmentOnly ? Color.gray.opacity(0.3) : Color.yellow.opacity(0.5), lineWidth: 1))
+                                    }
+                                    Button(action: { appointmentOnly = true }) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: appointmentOnly ? "checkmark.circle.fill" : "circle")
+                                                .foregroundColor(.yellow)
+                                            Text("By Appointment Only")
+                                                .font(.caption.bold())
+                                                .foregroundColor(appointmentOnly ? .white : .gray)
+                                        }
+                                        .frame(maxWidth: .infinity).padding(.vertical, 10)
+                                        .background(appointmentOnly ? Color.yellow.opacity(0.15) : Color.white.opacity(0.05))
+                                        .cornerRadius(8)
+                                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(appointmentOnly ? Color.yellow.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1))
+                                    }
                                 }
-                                formField(label: "STATE") {
-                                    TextField("ST", text: $stateName).modifier(FormTextFieldStyle())
-                                }.frame(width: 70)
-                                formField(label: "ZIP") {
-                                    TextField("00000", text: $zipCode)
-                                        .modifier(FormTextFieldStyle()).keyboardType(.numberPad)
-                                }.frame(width: 90)
+                            }
+
+                            // ADDRESS SECTION
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Text("LOCATION")
+                                        .font(.caption2.bold()).foregroundColor(.yellow).padding(.leading, 5)
+                                    Spacer()
+                                    // Hide address toggle
+                                    Button(action: { hideAddress.toggle() }) {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: hideAddress ? "eye.slash.fill" : "eye.fill")
+                                                .font(.caption).foregroundColor(hideAddress ? .orange : .gray)
+                                            Text(hideAddress ? "Address Hidden" : "Show Address")
+                                                .font(.caption2.bold())
+                                                .foregroundColor(hideAddress ? .orange : .gray)
+                                        }
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                        .background(hideAddress ? Color.orange.opacity(0.1) : Color.white.opacity(0.05))
+                                        .cornerRadius(6)
+                                    }
+                                }
+
+                                if hideAddress {
+                                    // Still collect city/state for location-based filtering
+                                    Text("Your full address stays private. We only use your city/state to show your ad to nearby riders.")
+                                        .font(.caption2).foregroundColor(.gray)
+                                        .padding(10)
+                                        .background(Color.orange.opacity(0.08))
+                                        .cornerRadius(8)
+                                    HStack(spacing: 12) {
+                                        formField(label: "CITY") {
+                                            TextField("City", text: $cityName).modifier(FormTextFieldStyle())
+                                        }
+                                        formField(label: "STATE") {
+                                            TextField("ST", text: $stateName).modifier(FormTextFieldStyle())
+                                        }.frame(width: 70)
+                                        formField(label: "ZIP") {
+                                            TextField("00000", text: $zipCode)
+                                                .modifier(FormTextFieldStyle()).keyboardType(.numberPad)
+                                        }.frame(width: 90)
+                                    }
+                                } else {
+                                    formField(label: "STREET ADDRESS (OPTIONAL)") {
+                                        TextField("123 Main Street", text: $streetAddress)
+                                            .modifier(FormTextFieldStyle())
+                                    }
+                                    HStack(spacing: 12) {
+                                        formField(label: "CITY") {
+                                            TextField("City", text: $cityName).modifier(FormTextFieldStyle())
+                                        }
+                                        formField(label: "STATE") {
+                                            TextField("ST", text: $stateName).modifier(FormTextFieldStyle())
+                                        }.frame(width: 70)
+                                        formField(label: "ZIP") {
+                                            TextField("00000", text: $zipCode)
+                                                .modifier(FormTextFieldStyle()).keyboardType(.numberPad)
+                                        }.frame(width: 90)
+                                    }
+                                }
                             }
                             formField(label: "PHONE NUMBER (OPTIONAL)") {
                                 TextField("e.g. 7025550100", text: $phone)
@@ -911,17 +1222,34 @@ struct AdvertiserSignupView: View {
             }
         }
 
+        // Build address — if hideAddress, only use city/state/zip for geocoding, don't display street
         var addressParts: [String] = []
-        if !streetAddress.isEmpty { addressParts.append(streetAddress) }
+        if !hideAddress && !streetAddress.isEmpty { addressParts.append(streetAddress) }
         if !cityName.isEmpty { addressParts.append(cityName) }
         if !stateName.isEmpty { addressParts.append(stateName) }
         if !zipCode.isEmpty { addressParts.append(zipCode) }
         let fullAddress = addressParts.joined(separator: ", ")
 
+        // Build full address for geocoding (always includes street even if hidden from display)
+        var geocodeParts: [String] = []
+        if !streetAddress.isEmpty { geocodeParts.append(streetAddress) }
+        if !cityName.isEmpty { geocodeParts.append(cityName) }
+        if !stateName.isEmpty { geocodeParts.append(stateName) }
+        if !zipCode.isEmpty { geocodeParts.append(zipCode) }
+        let fullGeocodeAddress = geocodeParts.joined(separator: ", ")
+
+        // Build notes to store appointment-only, hide-address flags, and full geocode address
+        var adNotes = ""
+        if appointmentOnly { adNotes += "appointment_only" }
+        if hideAddress { adNotes += adNotes.isEmpty ? "hide_address" : ",hide_address" }
+        if hideAddress && !fullGeocodeAddress.isEmpty {
+            adNotes += ",geocode:\(fullGeocodeAddress)"
+        }
+
         let newAd = SupabaseAd(
             id: UUID(),
             businessName: businessName,
-            tagline: tagline,
+            tagline: appointmentOnly ? tagline + " • By Appointment Only" : tagline,
             category: category,
             phone: phone.isEmpty ? nil : phone,
             websiteURL: websiteURL.isEmpty ? nil : websiteURL,
@@ -932,8 +1260,9 @@ struct AdvertiserSignupView: View {
             advertiserEmail: advertiserEmail.isEmpty ? nil : advertiserEmail,
             paymentStatus: "unpaid",
             paidUntil: nil,
-            notes: nil,
-            billingPreference: billingPreference
+            notes: adNotes.isEmpty ? nil : adNotes,
+            billingPreference: billingPreference,
+            advertiserPin: advertiserPin.isEmpty ? nil : advertiserPin
         )
 
         do {

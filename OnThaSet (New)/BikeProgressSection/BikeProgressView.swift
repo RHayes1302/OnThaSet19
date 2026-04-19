@@ -64,12 +64,15 @@ struct UploadBikeProgressView: View {
     }
     
     // Multiple before/after photos
-    @State private var beforePhotos: [PhotosPickerItem] = []
+    @State private var beforePhotos: [PhotosPickerItem] = []  // max 1
     @State private var afterPhotos: [PhotosPickerItem] = []
     @State private var beforeImages: [UIImage] = []
     @State private var afterImages: [UIImage] = []
     
     @State private var showingSuccessAlert = false
+    @State private var isSaving = false
+    @State private var uploadError = ""
+    @State private var showingError = false
     
     private var currentProfile: UserProfile? {
         profiles.first
@@ -103,6 +106,22 @@ struct UploadBikeProgressView: View {
                 Button("Cancel") { dismiss() }
                     .foregroundColor(.yellow)
             }
+        }
+        .overlay {
+            if isSaving {
+                ZStack {
+                    Color.black.opacity(0.6).ignoresSafeArea()
+                    VStack(spacing: 15) {
+                        ProgressView().tint(.yellow).scaleEffect(1.5)
+                        Text("Uploading photos...").foregroundColor(.white)
+                    }
+                }
+            }
+        }
+        .alert("Upload Failed", isPresented: $showingError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(uploadError)
         }
         .onChange(of: beforePhotos) { _, newValue in
             loadPhotos(from: newValue, into: $beforeImages)
@@ -219,7 +238,7 @@ struct UploadBikeProgressView: View {
                 .font(.caption.bold())
                 .foregroundColor(.yellow)
             
-            Text("(Optional)")
+            Text("(1 photo)")
                 .font(.caption2)
                 .foregroundColor(.gray)
             
@@ -227,10 +246,10 @@ struct UploadBikeProgressView: View {
             
             PhotosPicker(
                 selection: $beforePhotos,
-                maxSelectionCount: 5,
+                maxSelectionCount: 1,
                 matching: .images
             ) {
-                Label("Add", systemImage: "plus.circle.fill")
+                Label(beforeImages.isEmpty ? "Add" : "Change", systemImage: beforeImages.isEmpty ? "plus.circle.fill" : "arrow.triangle.2.circlepath")
                     .font(.caption.bold())
                     .foregroundColor(.yellow)
             }
@@ -248,14 +267,14 @@ struct UploadBikeProgressView: View {
     }
     
     private var beforePhotosGrid: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(beforeImages.enumerated()), id: \.offset) { index, image in
-                    photoThumbnail(image: image) {
-                        beforeImages.remove(at: index)
-                    }
+        HStack {
+            if let image = beforeImages.first {
+                photoThumbnail(image: image) {
+                    beforeImages.removeAll()
+                    beforePhotos.removeAll()
                 }
             }
+            Spacer()
         }
     }
     
@@ -277,7 +296,7 @@ struct UploadBikeProgressView: View {
                 .font(.caption.bold())
                 .foregroundColor(.yellow)
             
-            Text("(Required)")
+            Text("(1 photo required)")
                 .font(.caption2)
                 .foregroundColor(.orange)
             
@@ -285,10 +304,10 @@ struct UploadBikeProgressView: View {
             
             PhotosPicker(
                 selection: $afterPhotos,
-                maxSelectionCount: 5,
+                maxSelectionCount: 1,
                 matching: .images
             ) {
-                Label("Add", systemImage: "plus.circle.fill")
+                Label(afterImages.isEmpty ? "Add" : "Change", systemImage: afterImages.isEmpty ? "plus.circle.fill" : "arrow.triangle.2.circlepath")
                     .font(.caption.bold())
                     .foregroundColor(.yellow)
             }
@@ -306,14 +325,14 @@ struct UploadBikeProgressView: View {
     }
     
     private var afterPhotosGrid: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Array(afterImages.enumerated()), id: \.offset) { index, image in
-                    photoThumbnail(image: image) {
-                        afterImages.remove(at: index)
-                    }
+        HStack {
+            if let image = afterImages.first {
+                photoThumbnail(image: image) {
+                    afterImages.removeAll()
+                    afterPhotos.removeAll()
                 }
             }
+            Spacer()
         }
     }
     
@@ -380,51 +399,93 @@ struct UploadBikeProgressView: View {
     }
     
     private func saveProgress() {
-        guard let profile = currentProfile else { return }
-        
-        // Save all photos and create BikeProgress entries
-        // For now, we'll create one entry with multiple images saved
-        // You could create separate entries for each before/after pair
-        
-        // Save first after image (primary)
-        guard let firstAfter = afterImages.first else { return }
-        let afterFilename = "bike_after_\(UUID().uuidString).jpg"
-        saveImage(firstAfter, filename: afterFilename)
-        
-        // Save first before image if available
-        var beforeFilename = ""
-        if let firstBefore = beforeImages.first {
-            beforeFilename = "bike_before_\(UUID().uuidString).jpg"
-            saveImage(firstBefore, filename: beforeFilename)
+        Task {
+            await performSave()
         }
-        
-        // Create BikeProgress entry
-        let progress = BikeProgress(
-            modificationTitle: modificationTitle,
-            note: note,
-            beforeImage: beforeFilename,
-            afterImage: afterFilename,
-            bikeMake: bikeMake,
-            bikeModel: bikeModel,
-            bikeYear: bikeYear,
-            userID: profile.appleUserID
-        )
-        
-        modelContext.insert(progress)
-        
-        // Update profile stats
-        profile.totalBikeProgressPosts += 1
-        
-        try? modelContext.save()
-        
-        showingSuccessAlert = true
     }
-    
-    private func saveImage(_ image: UIImage, filename: String) {
-        guard let data = image.jpegData(compressionQuality: 0.8) else { return }
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let filePath = documentsPath.appendingPathComponent(filename)
-        try? data.write(to: filePath)
+
+    private func performSave() async {
+        guard let profile = currentProfile else {
+            print("❌ BikeProgress: No profile found")
+            return
+        }
+        guard let firstAfter = afterImages.first else {
+            print("❌ BikeProgress: No after image")
+            return
+        }
+
+        await MainActor.run { isSaving = true }
+
+        do {
+            // Upload AFTER photo to Supabase
+            guard let afterData = firstAfter.jpegData(compressionQuality: 0.8) else {
+                throw NSError(domain: "BikeProgress", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not convert after image to data"])
+            }
+            let afterFileName = "bike_after_\(profile.appleUserID)_\(UUID().uuidString).jpg"
+            let afterURL = try await SupabaseManager.shared.uploadImage(
+                data: afterData,
+                bucket: "bike-progress",
+                fileName: afterFileName
+            )
+            print("✅ After photo uploaded: \(afterURL)")
+
+            // Upload BEFORE photo if available
+            var beforeURL = ""
+            if let firstBefore = beforeImages.first,
+               let beforeData = firstBefore.jpegData(compressionQuality: 0.8) {
+                let beforeFileName = "bike_before_\(profile.appleUserID)_\(UUID().uuidString).jpg"
+                beforeURL = try await SupabaseManager.shared.uploadImage(
+                    data: beforeData,
+                    bucket: "bike-progress",
+                    fileName: beforeFileName
+                )
+                print("✅ Before photo uploaded: \(beforeURL)")
+            }
+
+            // Save to SwiftData with Supabase URLs
+            let progress = BikeProgress(
+                modificationTitle: modificationTitle,
+                note: note,
+                beforeImage: beforeURL,
+                afterImage: afterURL,
+                bikeMake: bikeMake,
+                bikeModel: bikeModel,
+                bikeYear: bikeYear,
+                userID: profile.appleUserID
+            )
+
+            await MainActor.run {
+                modelContext.insert(progress)
+                profile.totalBikeProgressPosts += 1
+                try? modelContext.save()
+                print("✅ BikeProgress saved to SwiftData with Supabase URLs")
+            }
+
+            // Save metadata to Supabase so other users can see it on Posted By profile
+            await SupabaseManager.shared.saveBikeBuildMetadata(
+                userID: profile.appleUserID,
+                modificationTitle: modificationTitle,
+                note: note,
+                beforeImageURL: beforeURL,
+                afterImageURL: afterURL,
+                bikeMake: bikeMake,
+                bikeModel: bikeModel,
+                bikeYear: bikeYear
+            )
+
+            await MainActor.run {
+                isSaving = false
+                showingSuccessAlert = true
+            }
+
+        } catch {
+            print("❌ BikeProgress upload failed: \(error)")
+            await MainActor.run {
+                isSaving = false
+                uploadError = error.localizedDescription
+                showingError = true
+            }
+        }
     }
 }
 

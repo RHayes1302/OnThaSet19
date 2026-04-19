@@ -124,10 +124,102 @@ struct GatePage: View {
                 email: email,
                 displayName: displayName
             )
-            saveUserLocally(userID: userID, email: email)
+            await syncProfileFromSupabase(userID: userID, email: email)
             authService.loginWithApple(userID: userID, email: email)
             isSigningIn = false
             print("✅ Sign in complete")
+        }
+    }
+
+    // MARK: - Sync Full Profile from Supabase
+
+    private func syncProfileFromSupabase(userID: String, email: String) async {
+        let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
+        let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
+
+        guard let url = URL(string: "\(projectURL)/rest/v1/users?apple_user_id=eq.\(userID)&limit=1") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let userData = json.first else {
+            // No remote profile — just ensure local exists
+            saveUserLocally(userID: userID, email: email)
+            return
+        }
+
+        // Fetch or create local profile
+        let descriptor = FetchDescriptor<UserProfile>(
+            predicate: #Predicate { $0.appleUserID == userID }
+        )
+        let existing = (try? modelContext.fetch(descriptor)) ?? []
+        let profile: UserProfile
+
+        // Check if Supabase has real profile data (display_name set = existing user)
+        let supabaseDisplayName = (userData["display_name"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        let isReturningUser = !supabaseDisplayName.isEmpty
+
+        if let found = existing.first {
+            profile = found
+        } else {
+            profile = UserProfile(appleUserID: userID, email: email)
+            profile.hasCompletedSetup = isReturningUser
+            modelContext.insert(profile)
+        }
+
+        // Sync all fields from Supabase
+        profile.appleUserID     = userID
+        profile.email           = (userData["email"] as? String) ?? email
+        profile.displayName     = (userData["display_name"] as? String) ?? profile.displayName
+        profile.bio             = (userData["bio"] as? String) ?? ""
+        profile.hometown        = (userData["hometown"] as? String) ?? ""
+        profile.club            = (userData["club"] as? String) ?? ""
+        profile.favoriteRide    = (userData["favorite_ride"] as? String) ?? ""
+        profile.ridingSince     = (userData["riding_since"] as? String) ?? ""
+        profile.preferredRideType = (userData["preferred_ride_type"] as? String) ?? ""
+        profile.favoriteRoute   = (userData["favorite_route"] as? String) ?? ""
+        profile.instagramHandle = (userData["instagram_handle"] as? String) ?? ""
+        profile.tiktokHandle    = (userData["tiktok_handle"] as? String) ?? ""
+        profile.youtubeChannel  = (userData["youtube_channel"] as? String) ?? ""
+        profile.facebookHandle  = (userData["facebook_handle"] as? String) ?? ""
+        profile.hasActiveSubscription = (userData["has_subscription"] as? Bool) ?? false
+
+        // Download profile image from URL if we don't have local data
+        if profile.profileImageData == nil,
+           let urlStr = userData["profile_image_url"] as? String,
+           !urlStr.isEmpty,
+           let imgURL = URL(string: urlStr),
+           let (imgData, _) = try? await URLSession.shared.data(from: imgURL) {
+            profile.profileImageData = imgData
+        }
+
+        // Download background image from URL if we don't have local data
+        if profile.backgroundImageData == nil,
+           let urlStr = userData["background_image_url"] as? String,
+           !urlStr.isEmpty,
+           let imgURL = URL(string: urlStr),
+           let (imgData, _) = try? await URLSession.shared.data(from: imgURL) {
+            profile.backgroundImageData = imgData
+        }
+
+        try? modelContext.save()
+        print("✅ Profile synced from Supabase for \(profile.displayName)")
+
+        await MainActor.run {
+            if isReturningUser {
+                // Has existing profile data — skip setup screen
+                UserDefaults.standard.set(true, forKey: "hasCompletedProfileSetup")
+                profile.hasCompletedSetup = true
+                print("✅ Returning user — skipping welcome setup")
+            } else {
+                // Brand new user — show welcome setup
+                UserDefaults.standard.set(false, forKey: "hasCompletedProfileSetup")
+                profile.hasCompletedSetup = false
+                print("🆕 New user — showing welcome setup")
+            }
         }
     }
 
@@ -191,4 +283,9 @@ struct GatePage: View {
             print("❌ Local profile error: \(error)")
         }
     }
+}
+
+// MARK: - Notification Names
+extension Notification.Name {
+    static let showWelcomeSetup = Notification.Name("showWelcomeSetup")
 }
