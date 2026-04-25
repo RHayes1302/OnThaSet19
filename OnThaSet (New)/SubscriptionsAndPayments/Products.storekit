@@ -20,8 +20,8 @@
       "internalID" : "A8D2F99A",
       "localizations" : [
         {
-          "description" : "",
-          "displayName" : "",
+          "description" : "Post a single event to the On Tha Set riding community.",
+          "displayName" : "Single Event Post",
           "locale" : "en_US"
         }
       ],
@@ -86,7 +86,11 @@
     {
       "id" : "FDB4E3FB",
       "localizations" : [
-
+        {
+          "description" : "Post up to 4 events per month to the On Tha Set riding community.",
+          "displayName" : "Monthly Membership",
+          "locale" : "en_US"
+        }
       ],
       "name" : "EventPosts",
       "subscriptions" : [
@@ -98,14 +102,14 @@
 
           ],
           "displayPrice" : "2.99",
-          "familyShareable" : true,
+          "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "2BA9A97C",
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "",
-              "displayName" : "",
+              "description" : "Post up to 4 events per month to the On Tha Set riding community.",
+              "displayName" : "Monthly Membership",
               "locale" : "en_US"
             }
           ],

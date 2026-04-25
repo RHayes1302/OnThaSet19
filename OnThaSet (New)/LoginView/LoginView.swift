@@ -73,6 +73,16 @@ struct LoginView: View {
                 .padding(.horizontal, 40)
                 .disabled(isSigningIn)
 
+                // DEMO MODE - App Review Access
+                Button(action: {
+                    dismiss()
+                }) {
+                    Text("Explore Without Signing In")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
+                        .underline()
+                }
+
                 // BACK BUTTON
                 Button(action: { dismiss() }) {
                     Text("GO BACK")

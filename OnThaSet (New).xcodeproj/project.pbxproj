@@ -30,7 +30,7 @@
 
 /* Begin PBXFileReference section */
 		992BD97E2F7CE71D007ABF69 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
-		996BBC6F2EE23EE700C4A68C /* OnThaSet (New).app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OnThaSet (New).app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		996BBC6F2EE23EE700C4A68C /* OnThaSet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnThaSet.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		996BBC7E2EE23EE800C4A68C /* OnThaSet (New)Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OnThaSet (New)Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		996BBC882EE23EE800C4A68C /* OnThaSet (New)UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OnThaSet (New)UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -102,7 +102,7 @@
 		996BBC702EE23EE700C4A68C /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				996BBC6F2EE23EE700C4A68C /* OnThaSet (New).app */,
+				996BBC6F2EE23EE700C4A68C /* OnThaSet.app */,
 				996BBC7E2EE23EE800C4A68C /* OnThaSet (New)Tests.xctest */,
 				996BBC882EE23EE800C4A68C /* OnThaSet (New)UITests.xctest */,
 			);
@@ -132,7 +132,7 @@
 				992BD8D22F75AC5B007ABF69 /* Supabase */,
 			);
 			productName = "OnThaSet (New)";
-			productReference = 996BBC6F2EE23EE700C4A68C /* OnThaSet (New).app */;
+			productReference = 996BBC6F2EE23EE700C4A68C /* OnThaSet.app */;
 			productType = "com.apple.product-type.application";
 		};
 		996BBC7D2EE23EE800C4A68C /* OnThaSet (New)Tests */ = {
@@ -437,9 +437,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hayesenterprisesllc.onthaset;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = OnThaSet;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -478,9 +478,9 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.hayesenterprisesllc.onthaset;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = OnThaSet;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;

@@ -26,8 +26,11 @@ struct MyAccountView: View {
     @State private var showingPaymentSheet = false
     @StateObject private var storeManager = StoreKitManager()
 
+    // ✅ Always filter by logged in user
     private var currentProfile: UserProfile? {
-        profiles.first
+        guard let userID = authService.currentUser?.id else { return nil }
+        return profiles.first { $0.appleUserID == userID }
+            ?? profiles.first { $0.appleUserID.lowercased() == userID.lowercased() }
     }
 
     private var isNewUser: Bool {
@@ -207,7 +210,6 @@ struct MyAccountView: View {
         isSigningIn = true
 
         Task {
-            // Save to Supabase
             do {
                 let existing: [[String: String]] = try await supabase
                     .from("users")
@@ -230,7 +232,6 @@ struct MyAccountView: View {
                 print("❌ Supabase error: \(error)")
             }
 
-            // Save locally
             let descriptor = FetchDescriptor<UserProfile>(
                 predicate: #Predicate { $0.appleUserID == userID }
             )
@@ -239,10 +240,8 @@ struct MyAccountView: View {
                 if !displayName.isEmpty { profile.displayName = displayName }
                 modelContext.insert(profile)
                 try? modelContext.save()
-                print("✅ Profile created via Apple Sign In")
             }
 
-            // Update auth state so the UI refreshes
             authService.loginWithApple(userID: userID, email: email)
             isSigningIn = false
         }
@@ -289,10 +288,20 @@ struct MyAccountView: View {
 
     private func handlePostAttempt(for type: PostType = .event) {
         guard let profile = currentProfile else { showingPaymentSheet = true; return }
-        let hasSubscription = storeManager.hasActiveSubscription || profile.hasActiveSubscription
-        let hasSinglePost = storeManager.purchasedProductIDs.contains("com.onthaset.singlepost")
+        let userID = authService.currentUser?.id
 
-        if hasSubscription || hasSinglePost {
+        let canPost: Bool = {
+            // 1. Owner account — always can post
+            if AppConfig.isOwner(userID) { return true }
+            // 2. Demo accounts — bypass when review mode is ON
+            if AppConfig.isDemoUser(userID) { return true }
+            // 3. Paid single post or subscription
+            return storeManager.purchasedProductIDs.contains("com.onthaset.singlepost") ||
+                   storeManager.hasActiveSubscription ||
+                   profile.hasActiveSubscription
+        }()
+
+        if canPost {
             switch type {
             case .event: showingPostEvent = true
             case .photo: showingUploadPhoto = true
@@ -387,9 +396,15 @@ struct SettingsView: View {
 struct PostEventView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var authService: AuthService
     @Query private var profiles: [UserProfile]
 
-    private var currentProfile: UserProfile? { profiles.first }
+    // ✅ Filter by logged in user
+    private var currentProfile: UserProfile? {
+        guard let userID = authService.currentUser?.id else { return nil }
+        return profiles.first { $0.appleUserID == userID }
+            ?? profiles.first { $0.appleUserID.lowercased() == userID.lowercased() }
+    }
 
     var body: some View {
         if let profile = currentProfile {

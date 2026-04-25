@@ -11,6 +11,7 @@ import AuthenticationServices
 
 struct DefaultPageView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var authService: AuthService
     @Query(sort: \Event.date) private var allEvents: [Event]
     @Query private var profiles: [UserProfile]
 
@@ -30,7 +31,19 @@ struct DefaultPageView: View {
     @State private var showingWelcomeSetup = false
     @State private var navigateToProfile = false
 
-    private var currentProfile: UserProfile? { profiles.first }
+    // ✅ Always filter by logged in user — NO fallback to profiles.first
+    private var currentProfile: UserProfile? {
+        guard let userID = authService.currentUser?.id else {
+            print("⚠️ currentUser is nil — no profile shown")
+            return nil
+        }
+        let profile = profiles.first { $0.appleUserID == userID }
+            ?? profiles.first { $0.appleUserID.lowercased() == userID.lowercased() }
+        print("🔍 currentUser.id: \(userID) — profile found: \(profile?.displayName ?? "nil")")
+        print("📋 All local profiles: \(profiles.map { "\($0.appleUserID.prefix(8))=\($0.displayName)" })")
+        return profile
+    }
+
     private var needsSetup: Bool {
         guard let p = currentProfile else { return false }
         return !p.hasCompletedSetup
@@ -64,6 +77,23 @@ struct DefaultPageView: View {
                         }
                         .padding(.top, 50)
                         .padding(.bottom, 10)
+
+                        // EXIT DEMO BANNER — only shown for guest/reviewer users
+                        if authService.currentUser?.id == "demo-reviewer-user" {
+                            Button(action: { authService.logout() }) {
+                                HStack {
+                                    Image(systemName: "arrow.left.circle.fill")
+                                    Text("Exit Demo — Sign In to Continue")
+                                        .font(.caption.bold())
+                                }
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.yellow)
+                                .cornerRadius(8)
+                            }
+                            .padding(.horizontal, 40)
+                        }
 
                         // LOGO
                         Image("ONTHASET")
@@ -189,7 +219,7 @@ struct DefaultPageView: View {
                         }
                         .padding(.horizontal, 40)
 
-                        // ADVERTISE WITH US — premium glowing banner
+                        // ADVERTISE WITH US
                         NavigationLink(destination: AdvertiserSignupView()) {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 12)
@@ -277,18 +307,18 @@ struct DefaultPageView: View {
                         price: "0.00",
                         latitude: 0.0,
                         longitude: 0.0,
-                        postedByUserID: profiles.first?.appleUserID ?? "",
-                        postedByName: profiles.first?.displayName ?? ""
+                        postedByUserID: currentProfile?.appleUserID ?? "",
+                        postedByName: currentProfile?.displayName ?? ""
                     ),
                     onSave: { newEvent in
-                        if let profile = profiles.first {
+                        if let profile = currentProfile {
                             newEvent.postedByUserID = profile.appleUserID
                             newEvent.postedByName = profile.displayName.isEmpty
                                 ? profile.email
                                 : profile.displayName
                         }
                         modelContext.insert(newEvent)
-                        if let profile = profiles.first, profile.hasActiveSubscription {
+                        if let profile = currentProfile, profile.hasActiveSubscription {
                             profile.incrementPostCount()
                         }
                         try? modelContext.save()
@@ -337,13 +367,12 @@ struct DefaultPageView: View {
             }
         }
         .onAppear {
-            if let profile = profiles.first {
+            if let profile = currentProfile {
                 profile.hasActiveSubscription = storeManager.hasActiveSubscription
             }
             Task {
                 await SupabaseManager.shared.fetchActiveAds()
                 await SupabaseManager.shared.fetchAllEvents()
-                // Sync: remove local events that no longer exist in Supabase
                 let supabaseTitles = Set(SupabaseManager.shared.events.map { $0.title.lowercased() })
                 if !supabaseTitles.isEmpty {
                     for event in allEvents {
@@ -353,7 +382,6 @@ struct DefaultPageView: View {
                     }
                     try? modelContext.save()
                 } else {
-                    // No Supabase events — delete all local events
                     for event in allEvents { modelContext.delete(event) }
                     try? modelContext.save()
                 }
@@ -368,15 +396,32 @@ struct DefaultPageView: View {
     }
 
     func handlePostAttempt() {
-        guard let profile = profiles.first else {
+        guard let profile = currentProfile else {
             showingPaymentSheet = true
             return
         }
-        profile.hasActiveSubscription = storeManager.hasActiveSubscription
+        let userID = authService.currentUser?.id
+
+        // 1. Owner account — always can post
+        if AppConfig.isOwner(userID) {
+            navigateToPost = true
+            return
+        }
+
+        // 2. Demo accounts — bypass payment when review mode is ON
+        if AppConfig.isDemoUser(userID) {
+            navigateToPost = true
+            return
+        }
+
+        // 3. Paid single post
         if storeManager.purchasedProductIDs.contains("com.onthaset.singlepost") {
             navigateToPost = true
             return
         }
+
+        // 4. Active subscription
+        profile.hasActiveSubscription = storeManager.hasActiveSubscription || profile.hasActiveSubscription
         if profile.hasActiveSubscription {
             profile.checkAndResetMonthlyCount()
             if profile.postsThisMonth >= 4 {
@@ -384,9 +429,11 @@ struct DefaultPageView: View {
             } else {
                 navigateToPost = true
             }
-        } else {
-            showingPaymentSheet = true
+            return
         }
+
+        // 5. No subscription — show payment sheet
+        showingPaymentSheet = true
     }
 
     func makeMenuButton(text: String) -> some View {

@@ -3,7 +3,7 @@
 //  OnThaSet (New)
 //
 //  Created by Ramone Hayes on 12/4/25.
-//po
+//
 
 import SwiftUI
 import SwiftData
@@ -14,18 +14,24 @@ struct AboutView: View {
     @Environment(\.dismiss) var dismiss
     @EnvironmentObject var authService: AuthService
 
+    // ✅ Filter by logged in user
+    private var currentProfile: UserProfile? {
+        guard let userID = authService.currentUser?.id else { return nil }
+        return profiles.first { $0.appleUserID == userID }
+            ?? profiles.first { $0.appleUserID.lowercased() == userID.lowercased() }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // 1. BRANDED HEADER WITH YELLOW CHEVRON
                 headerSection
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 25) {
                         
-                        // 2. WE ACCEPT SECTION
+                        // WE ACCEPT SECTION
                         VStack(alignment: .leading, spacing: 15) {
                             Text("WE ACCEPT")
                                 .font(.caption.bold())
@@ -62,8 +68,8 @@ struct AboutView: View {
                             .cornerRadius(12)
                         }
 
-                        // 3. YOUR ACCOUNT / POST TRACKER
-                        if let profile = profiles.first {
+                        // YOUR ACCOUNT / POST TRACKER
+                        if let profile = currentProfile {
                             VStack(alignment: .leading, spacing: 12) {
                                 Text("YOUR ACCOUNT")
                                     .font(.caption.bold())
@@ -112,7 +118,7 @@ struct AboutView: View {
                             }
                         }
 
-                        // 4. MISSION SECTION
+                        // MISSION SECTION
                         VStack(alignment: .leading, spacing: 10) {
                             Text("THE MISSION")
                                 .font(.caption.bold())
@@ -129,7 +135,7 @@ struct AboutView: View {
                         
                         Divider().background(Color.gray.opacity(0.3))
                         
-                        // 5. HOW TO USE SECTION
+                        // HOW TO USE SECTION
                         VStack(alignment: .leading, spacing: 15) {
                             Text("HOW TO USE")
                                 .font(.caption.bold())
@@ -147,12 +153,12 @@ struct AboutView: View {
                         
                         Spacer(minLength: 50)
                         
-                        // 6. FOOTER
+                        // FOOTER
                         VStack(spacing: 4) {
                             Text("Version 1.0.0")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.gray)
-                            Text("© 2026 ON-THA-SET") // Updated to current year
+                            Text("© 2026 ON-THA-SET")
                                 .font(.system(size: 10))
                                 .foregroundColor(.gray.opacity(0.6))
                         }
@@ -165,7 +171,6 @@ struct AboutView: View {
         .navigationBarHidden(true)
     }
     
-    // New Header Section helper
     private var headerSection: some View {
         HStack {
             Button(action: { dismiss() }) {
@@ -192,7 +197,6 @@ struct AboutView: View {
             
             Spacer()
             
-            // Mirror the back button for centering
             Image(systemName: "chevron.left").opacity(0)
         }
         .padding(.horizontal, 25)

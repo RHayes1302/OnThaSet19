@@ -149,6 +149,9 @@ struct AdminDashboardView: View {
     @State private var isLoading = false
     @State private var selectedTab = 0
 
+    // ✅ Review mode toggle — reads/writes UserDefaults, no resubmission needed
+    @State private var isReviewModeOn: Bool = UserDefaults.standard.object(forKey: "adminReviewModeOn") == nil ? true : UserDefaults.standard.bool(forKey: "adminReviewModeOn")
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -191,6 +194,7 @@ struct AdminDashboardView: View {
                     Text("Reports (\(pendingReports.count))").tag(3)
                     Text("Paused (\(deactivatedAds.count))").tag(4)
                     Text("Expired (\(expiredAds.count))").tag(5)
+                    Text("⚙️ Settings").tag(6)
                 }
                 .pickerStyle(.segmented)
                 .padding()
@@ -281,6 +285,9 @@ struct AdminDashboardView: View {
                                         )
                                     }
                                 }
+                            } else if selectedTab == 6 {
+                                // ✅ App Review Mode settings
+                                adminSettingsView
                             }
                         }
                         .padding()
@@ -301,6 +308,94 @@ struct AdminDashboardView: View {
             }
         }
         .task { await loadAll() }
+    }
+
+    // MARK: - Admin Settings View
+    private var adminSettingsView: some View {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("APP REVIEW SETTINGS")
+                    .font(.caption.bold())
+                    .foregroundColor(.yellow)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.yellow.opacity(0.2))
+                    .cornerRadius(6)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("App Review Mode")
+                                .font(.subheadline.bold())
+                                .foregroundColor(.white)
+                            Text("When ON: demo accounts can post events without a subscription. Turn OFF after App Store approval.")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $isReviewModeOn)
+                            .tint(.yellow)
+                            .onChange(of: isReviewModeOn) { _, newValue in
+                                UserDefaults.standard.set(newValue, forKey: "adminReviewModeOn")
+                                print("✅ Review mode: \(newValue ? "ON" : "OFF")")
+                            }
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.2), lineWidth: 1))
+
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(isReviewModeOn ? Color.green : Color.red)
+                            .frame(width: 10, height: 10)
+                        Text(isReviewModeOn
+                             ? "REVIEW MODE ON — Demo accounts can post for free"
+                             : "NORMAL MODE — Subscription required to post")
+                            .font(.caption.bold())
+                            .foregroundColor(isReviewModeOn ? .green : .red)
+                    }
+                    .padding(.horizontal, 4)
+                }
+
+                // Instructions
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("HOW TO USE")
+                        .font(.caption.bold())
+                        .foregroundColor(.yellow)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        instructionRow(number: "1", text: "Before submitting to App Store: make sure this is ON")
+                        instructionRow(number: "2", text: "After Apple approves your app: toggle this OFF")
+                        instructionRow(number: "3", text: "No resubmission needed — changes take effect immediately")
+                    }
+                }
+                .padding()
+                .background(Color.white.opacity(0.03))
+                .cornerRadius(12)
+            }
+            .padding()
+            .background(Color.white.opacity(0.03))
+            .cornerRadius(14)
+
+            Spacer()
+        }
+        .padding(.top, 8)
+    }
+
+    private func instructionRow(number: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(number)
+                .font(.caption.bold())
+                .foregroundColor(.black)
+                .frame(width: 18, height: 18)
+                .background(Color.yellow)
+                .clipShape(Circle())
+            Text(text)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func statCell(count: Int, label: String, color: Color) -> some View {
@@ -339,7 +434,6 @@ struct AdminDashboardView: View {
 
         guard let (data, _) = try? await URLSession.shared.data(for: request) else { return }
 
-        // Use a date-aware decoder
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
@@ -349,7 +443,6 @@ struct AdminDashboardView: View {
             if let date = iso.date(from: str) { return date }
             iso.formatOptions = [.withInternetDateTime]
             if let date = iso.date(from: str) { return date }
-            // Try yyyy-MM-dd format for paidUntil dates stored as date-only
             let df = DateFormatter()
             df.dateFormat = "yyyy-MM-dd"
             if let date = df.date(from: str) { return date }
@@ -359,14 +452,11 @@ struct AdminDashboardView: View {
         guard var ads = try? decoder.decode([SupabaseAd].self, from: data) else { return }
 
         let now = Date()
-
-        // Auto-expire any active ads whose paidUntil date has passed
         for i in ads.indices {
             if ads[i].status == "active",
                let paidUntil = ads[i].paidUntil,
                paidUntil < now {
                 ads[i].status = "expired"
-                // Update status in Supabase so it stays expired
                 await expireAd(id: ads[i].id, anonKey: anonKey, projectURL: projectURL)
             }
         }
@@ -387,14 +477,12 @@ struct AdminDashboardView: View {
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["status": "expired"])
         _ = try? await URLSession.shared.data(for: request)
-        print("✅ Ad \(id) auto-expired")
     }
 
     private func loadEvents() async {
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
 
-        // First — fetch expired events to get their image URLs before deleting
         let deleteFormatter = ISO8601DateFormatter()
         deleteFormatter.formatOptions = [.withInternetDateTime]
         let cutoff = deleteFormatter.string(from: Date().addingTimeInterval(-24 * 60 * 60))
@@ -411,18 +499,15 @@ struct AdminDashboardView: View {
                     enum CodingKeys: String, CodingKey { case imageURL = "image_url" }
                 }
                 if let expired = try? JSONDecoder().decode([ExpiredEvent].self, from: data) {
-                    // Delete each flyer from storage
                     for event in expired {
                         if let url = event.imageURL, !url.isEmpty {
                             await SupabaseManager.shared.deleteStorageFile(imageURL: url, bucket: "event-flyers")
                         }
                     }
-                    print("✅ Cleaned up \(expired.count) event flyers from storage")
                 }
             }
         }
 
-        // Now delete the expired event rows
         if let deleteURL = URL(string: "\(projectURL)/rest/v1/events?date=lt.\(cutoff)") {
             var deleteRequest = URLRequest(url: deleteURL)
             deleteRequest.httpMethod = "DELETE"
@@ -430,10 +515,8 @@ struct AdminDashboardView: View {
             deleteRequest.setValue(anonKey, forHTTPHeaderField: "apikey")
             deleteRequest.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
             _ = try? await URLSession.shared.data(for: deleteRequest)
-            print("✅ Deleted expired events from Supabase")
         }
 
-        // Then fetch only upcoming events
         let fetchFormatter = ISO8601DateFormatter()
         fetchFormatter.formatOptions = [.withInternetDateTime]
         let now = fetchFormatter.string(from: Date())
@@ -480,36 +563,23 @@ struct AdminDashboardView: View {
         await SupabaseManager.shared.fetchActiveAds()
     }
 
-    private func approveAd(_ ad: SupabaseAd) async {
-        await updateAdStatus(ad, status: "active")
-    }
-
-    private func rejectAd(_ ad: SupabaseAd) async {
-        await updateAdStatus(ad, status: "rejected")
-    }
+    private func approveAd(_ ad: SupabaseAd) async { await updateAdStatus(ad, status: "active") }
+    private func rejectAd(_ ad: SupabaseAd) async { await updateAdStatus(ad, status: "rejected") }
 
     private func deleteAd(_ ad: SupabaseAd) async {
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
-
         guard let id = ad.id else { return }
-
-        // Delete banner image from storage
         if let imageURL = ad.imageURL, !imageURL.isEmpty {
             await SupabaseManager.shared.deleteStorageFile(imageURL: imageURL, bucket: "ad-banners")
         }
-
-        // Delete the ad row from Supabase
         guard let url = URL(string: "\(projectURL)/rest/v1/ads?id=eq.\(id.uuidString)") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "DELETE"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
-        if let (_, response) = try? await URLSession.shared.data(for: request),
-           let http = response as? HTTPURLResponse {
-            print(http.statusCode == 200 || http.statusCode == 204 ? "✅ Ad deleted from Supabase" : "⚠️ Ad delete status: \(http.statusCode)")
-        }
+        _ = try? await URLSession.shared.data(for: request)
         await loadAds()
         await SupabaseManager.shared.fetchActiveAds()
     }
@@ -520,18 +590,14 @@ struct AdminDashboardView: View {
         await loadEvents()
     }
 
-    // MARK: - Reports
-
     private func loadReports() async {
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
-
         guard let url = URL(string: "\(projectURL)/rest/v1/event_reports?status=eq.pending&order=created_at.desc") else { return }
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
-
         if let (data, _) = try? await URLSession.shared.data(for: request),
            let reports = try? JSONDecoder().decode([AdminEventReport].self, from: data) {
             pendingReports = reports
@@ -541,7 +607,6 @@ struct AdminDashboardView: View {
     private func dismissReport(_ report: AdminEventReport) async {
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
-
         guard let url = URL(string: "\(projectURL)/rest/v1/event_reports?id=eq.\(report.id)") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
@@ -549,7 +614,6 @@ struct AdminDashboardView: View {
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["status": "dismissed"])
-
         _ = try? await URLSession.shared.data(for: request)
         await loadReports()
     }
@@ -557,8 +621,6 @@ struct AdminDashboardView: View {
     private func deleteReportedEvent(_ report: AdminEventReport) async {
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
-
-        // Delete the event from Supabase
         if let url = URL(string: "\(projectURL)/rest/v1/events?id=eq.\(report.eventID)") {
             var req = URLRequest(url: url)
             req.httpMethod = "DELETE"
@@ -567,8 +629,6 @@ struct AdminDashboardView: View {
             req.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
             _ = try? await URLSession.shared.data(for: req)
         }
-
-        // Mark the report as resolved
         if let url = URL(string: "\(projectURL)/rest/v1/event_reports?id=eq.\(report.id)") {
             var req = URLRequest(url: url)
             req.httpMethod = "PATCH"
@@ -578,7 +638,6 @@ struct AdminDashboardView: View {
             req.httpBody = try? JSONSerialization.data(withJSONObject: ["status": "resolved"])
             _ = try? await URLSession.shared.data(for: req)
         }
-
         await loadReports()
         await loadEvents()
     }
@@ -669,8 +728,6 @@ struct AdminReportCard: View {
                 }
                 Text("Posted by: \(event.postedByName)").font(.caption.bold()).foregroundColor(.orange)
             }
-
-            // View full event button
             NavigationLink(destination: SupabaseEventDetailView(event: event)) {
                 HStack(spacing: 6) {
                     Image(systemName: "eye.fill").font(.caption)
@@ -770,11 +827,7 @@ struct AdminReportCard: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
-
         if let (data, _) = try? await URLSession.shared.data(for: request) {
-            let rawString = String(data: data, encoding: .utf8) ?? "nil"
-            print("📦 Admin report event response: \(rawString)")
-            // Use plain decoder — SupabaseEvent has explicit CodingKeys
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .custom { decoder in
                 let container = try decoder.singleValueContainer()
@@ -790,9 +843,6 @@ struct AdminReportCard: View {
                let event = events.first {
                 await MainActor.run { reportedEvent = event }
                 await fetchPosterEmail(appleUserID: event.postedByUserID)
-                print("✅ Loaded reported event: \(event.title)")
-            } else {
-                print("❌ Could not decode reported event")
             }
         }
     }
@@ -898,14 +948,10 @@ struct AdminAdCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-
-            // HEADER ROW
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(ad.businessName)
-                        .font(.headline.bold()).foregroundColor(.white)
-                    Text(ad.tagline)
-                        .font(.caption).foregroundColor(.gray)
+                    Text(ad.businessName).font(.headline.bold()).foregroundColor(.white)
+                    Text(ad.tagline).font(.caption).foregroundColor(.gray)
                 }
                 Spacer()
                 VStack(spacing: 4) {
@@ -920,7 +966,6 @@ struct AdminAdCard: View {
                 }
             }
 
-            // CONTACT INFO
             VStack(alignment: .leading, spacing: 4) {
                 if let phone = ad.phone, !phone.isEmpty {
                     HStack(spacing: 6) {
@@ -950,12 +995,9 @@ struct AdminAdCard: View {
 
             Divider().background(Color.gray.opacity(0.3))
 
-            // PAYMENT STATUS
             VStack(alignment: .leading, spacing: 8) {
                 Text("PAYMENT").font(.caption2.bold()).foregroundColor(.yellow)
-
                 HStack(spacing: 8) {
-                    // Payment status selector
                     ForEach(["unpaid", "paid", "expired"], id: \.self) { status in
                         Button(action: { paymentStatus = status }) {
                             Text(status.uppercased())
@@ -967,11 +1009,8 @@ struct AdminAdCard: View {
                         }
                     }
                     Spacer()
-                    Text(planPrice + "/mo")
-                        .font(.caption.bold()).foregroundColor(planColor)
+                    Text(planPrice + "/mo").font(.caption.bold()).foregroundColor(planColor)
                 }
-
-                // Paid until date
                 if paymentStatus == "paid" {
                     Button(action: { showingDatePicker.toggle() }) {
                         HStack(spacing: 6) {
@@ -983,13 +1022,9 @@ struct AdminAdCard: View {
                     }
                     if showingDatePicker {
                         DatePicker("", selection: $paidUntil, displayedComponents: .date)
-                            .datePickerStyle(.compact)
-                            .colorScheme(.dark)
-                            .labelsHidden()
+                            .datePickerStyle(.compact).colorScheme(.dark).labelsHidden()
                     }
                 }
-
-                // Notes
                 Button(action: { showingNotes.toggle() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "note.text").foregroundColor(.yellow).font(.caption)
@@ -1001,14 +1036,9 @@ struct AdminAdCard: View {
                 }
                 if showingNotes {
                     TextField("Notes (payment method, date, etc.)", text: $notes)
-                        .font(.caption)
-                        .padding(8)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(8)
-                        .foregroundColor(.white)
+                        .font(.caption).padding(8)
+                        .background(Color.white.opacity(0.08)).cornerRadius(8).foregroundColor(.white)
                 }
-
-                // Save payment status button
                 Button(action: { Task { await savePaymentStatus() } }) {
                     HStack {
                         if isSavingPayment { ProgressView().tint(.black).scaleEffect(0.7) }
@@ -1022,41 +1052,31 @@ struct AdminAdCard: View {
 
             Divider().background(Color.gray.opacity(0.3))
 
-            // SEND PAYMENT LINKS
             VStack(alignment: .leading, spacing: 8) {
                 Text("SEND PAYMENT LINK").font(.caption2.bold()).foregroundColor(.yellow)
-
-                // Billing type buttons
                 HStack(spacing: 8) {
-                    // TEXT MESSAGE BUTTONS
                     VStack(spacing: 6) {
                         Text("💬 TEXT").font(.system(size: 9, weight: .black)).foregroundColor(.gray)
                         Button(action: { sendText(recurring: true) }) {
-                            Text("MONTHLY")
-                                .font(.system(size: 9, weight: .black)).foregroundColor(.black)
+                            Text("MONTHLY").font(.system(size: 9, weight: .black)).foregroundColor(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                                 .background(Color.green).cornerRadius(6)
                         }
                         Button(action: { sendText(recurring: false) }) {
-                            Text("ONE-TIME")
-                                .font(.system(size: 9, weight: .black)).foregroundColor(.black)
+                            Text("ONE-TIME").font(.system(size: 9, weight: .black)).foregroundColor(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                                 .background(Color.green.opacity(0.6)).cornerRadius(6)
                         }
                     }
-
-                    // EMAIL BUTTONS
                     VStack(spacing: 6) {
                         Text("📧 EMAIL").font(.system(size: 9, weight: .black)).foregroundColor(.gray)
                         Button(action: { sendEmail(recurring: true) }) {
-                            Text("MONTHLY")
-                                .font(.system(size: 9, weight: .black)).foregroundColor(.black)
+                            Text("MONTHLY").font(.system(size: 9, weight: .black)).foregroundColor(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                                 .background(Color.blue).cornerRadius(6)
                         }
                         Button(action: { sendEmail(recurring: false) }) {
-                            Text("ONE-TIME")
-                                .font(.system(size: 9, weight: .black)).foregroundColor(.black)
+                            Text("ONE-TIME").font(.system(size: 9, weight: .black)).foregroundColor(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 6)
                                 .background(Color.blue.opacity(0.6)).cornerRadius(6)
                         }
@@ -1064,7 +1084,6 @@ struct AdminAdCard: View {
                 }
             }
 
-            // APPROVE / REJECT / DELETE BUTTONS
             if onApprove != nil || onReject != nil {
                 HStack(spacing: 12) {
                     if let onReject = onReject {
@@ -1077,8 +1096,7 @@ struct AdminAdCard: View {
                     }
                     if let onApprove = onApprove {
                         Button(action: onApprove) {
-                            Text("APPROVE")
-                                .font(.caption.bold()).foregroundColor(.black)
+                            Text("APPROVE").font(.caption.bold()).foregroundColor(.black)
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
                                 .background(Color.green).cornerRadius(8)
                         }
@@ -1089,8 +1107,7 @@ struct AdminAdCard: View {
                         Text("DELETE PERMANENTLY")
                             .font(.caption.bold()).foregroundColor(.red)
                             .frame(maxWidth: .infinity).padding(.vertical, 8)
-                            .background(Color.red.opacity(0.15))
-                            .cornerRadius(8)
+                            .background(Color.red.opacity(0.15)).cornerRadius(8)
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.red.opacity(0.4), lineWidth: 1))
                     }
                 }
@@ -1099,10 +1116,7 @@ struct AdminAdCard: View {
         .padding()
         .background(Color.white.opacity(0.05))
         .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(statusColor.opacity(0.3), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(statusColor.opacity(0.3), lineWidth: 1))
         .onAppear {
             paymentStatus = ad.paymentStatus ?? "unpaid"
             notes = ad.notes ?? ""
@@ -1118,79 +1132,38 @@ struct AdminAdCard: View {
         }
     }
 
-    // MARK: - Send Text
     private func sendText(recurring: Bool) {
-        guard let phone = ad.phone, !phone.isEmpty else {
-            print("⚠️ No phone number for this advertiser")
-            return
-        }
+        guard let phone = ad.phone, !phone.isEmpty else { return }
         let link = recurring ? recurringLink : oneTimeLink
         let billingType = recurring ? "monthly recurring" : "one-time"
         let message = "Hi \(ad.businessName)! This is On Tha Set 🏍️ Your \(planBadge) ad has been approved! Complete your \(planPrice) \(billingType) payment to go live: \(link) — Reply here with any questions!"
         let cleaned = phone.filter { $0.isNumber }
         let encoded = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "sms:\(cleaned)&body=\(encoded)") {
-            UIApplication.shared.open(url)
-        }
+        if let url = URL(string: "sms:\(cleaned)&body=\(encoded)") { UIApplication.shared.open(url) }
     }
 
-    // MARK: - Send Email
     private func sendEmail(recurring: Bool) {
-        guard let email = ad.advertiserEmail, !email.isEmpty else {
-            print("⚠️ No email for this advertiser")
-            return
-        }
+        guard let email = ad.advertiserEmail, !email.isEmpty else { return }
         let link = recurring ? recurringLink : oneTimeLink
         let billingType = recurring ? "monthly recurring" : "one-time"
         let subject = "On Tha Set — Your Ad Has Been Approved!"
-        let body = """
-Hi \(ad.businessName),
-
-Great news! Your On Tha Set advertisement has been approved and is ready to go live.
-
-Plan: \(planBadge)
-Price: \(planPrice)/mo (\(billingType))
-
-Complete your payment here:
-\(link)
-
-Once payment is confirmed your ad will appear in the app within 24 hours.
-
-Questions? Reply to this email or text us directly.
-
-Ride safe,
-On Tha Set Team 🏍️
-"""
+        let body = "Hi \(ad.businessName),\n\nGreat news! Your On Tha Set advertisement has been approved.\n\nPlan: \(planBadge)\nPrice: \(planPrice)/mo (\(billingType))\n\nComplete your payment here:\n\(link)\n\nRide safe,\nOn Tha Set Team 🏍️"
         let subjectEncoded = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let bodyEncoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "mailto:\(email)?subject=\(subjectEncoded)&body=\(bodyEncoded)") {
-            UIApplication.shared.open(url)
-        }
+        if let url = URL(string: "mailto:\(email)?subject=\(subjectEncoded)&body=\(bodyEncoded)") { UIApplication.shared.open(url) }
     }
 
-    // MARK: - Save Payment Status
     private func savePaymentStatus() async {
         isSavingPayment = true
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
-
-        guard let id = ad.id,
-              let url = URL(string: "\(projectURL)/rest/v1/ads?id=eq.\(id.uuidString)") else {
-            isSavingPayment = false
-            return
+        guard let id = ad.id, let url = URL(string: "\(projectURL)/rest/v1/ads?id=eq.\(id.uuidString)") else {
+            isSavingPayment = false; return
         }
-
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-
-        var body: [String: Any] = [
-            "payment_status": paymentStatus,
-            "notes": notes
-        ]
-        if paymentStatus == "paid" {
-            body["paid_until"] = formatter.string(from: paidUntil)
-        }
-
+        var body: [String: Any] = ["payment_status": paymentStatus, "notes": notes]
+        if paymentStatus == "paid" { body["paid_until"] = formatter.string(from: paidUntil) }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1198,11 +1171,9 @@ On Tha Set Team 🏍️
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
         _ = try? await URLSession.shared.data(for: request)
         isSavingPayment = false
         onRefresh?()
-        print("✅ Payment status saved: \(paymentStatus)")
     }
 }
 
@@ -1226,14 +1197,12 @@ struct AdminEventCard: View {
                         .padding(8).background(Color.red.opacity(0.1)).cornerRadius(8)
                 }
             }
-
             HStack(spacing: 12) {
                 Label(event.date.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
                     .font(.caption).foregroundColor(.yellow)
                 Label(event.category.capitalized, systemImage: "tag.fill")
                     .font(.caption).foregroundColor(.gray)
             }
-
             let parts = event.locationName.split(separator: "|").map { String($0) }
             if parts.count >= 3 {
                 Label("\(parts[0]) — \(parts[2])", systemImage: "mappin.circle.fill")

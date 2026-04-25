@@ -148,7 +148,6 @@ struct WelcomeSetupView: View {
     // MARK: Step 1 - Photo & Name
     private var stepOne: some View {
         VStack(spacing: 16) {
-            // Banner + profile photo preview
             ZStack(alignment: .bottom) {
                 if let bg = backgroundImage {
                     Image(uiImage: bg).resizable().scaledToFill()
@@ -276,7 +275,7 @@ struct WelcomeSetupView: View {
         .padding(14).background(Color.white.opacity(0.08)).cornerRadius(10)
     }
 
-    // MARK: Save
+    // MARK: - Save and Finish
     private func saveAndFinish() async {
         await MainActor.run { isSaving = true }
 
@@ -295,18 +294,32 @@ struct WelcomeSetupView: View {
         profile.hasCompletedSetup = true
         UserDefaults.standard.set(true, forKey: "hasCompletedProfileSetup")
 
+        // Upload profile image
         var profileImageURL: String? = nil
         if let img = profileImage, let data = img.jpegData(compressionQuality: 0.8) {
             profile.profileImageData = data
             profileImageURL = try? await SupabaseManager.shared.uploadImage(
-                data: data, bucket: "profile-images", fileName: "profile-\(profile.appleUserID).jpg")
+                data: data, bucket: "profile-images", fileName: "profile-\(profile.appleUserID.lowercased()).jpg")
+            if let url = profileImageURL {
+                profile.profileImageURL = url
+                print("✅ Profile image uploaded: \(url)")
+            } else {
+                print("❌ Profile image upload failed")
+            }
         }
 
+        // Upload background image
         var backgroundImageURL: String? = nil
         if let img = backgroundImage, let data = img.jpegData(compressionQuality: 0.8) {
             profile.backgroundImageData = data
             backgroundImageURL = try? await SupabaseManager.shared.uploadImage(
-                data: data, bucket: "profile-images", fileName: "background-\(profile.appleUserID).jpg")
+                data: data, bucket: "profile-images", fileName: "background-\(profile.appleUserID.lowercased()).jpg")
+            if let url = backgroundImageURL {
+                profile.backgroundImageURL = url
+                print("✅ Background image uploaded: \(url)")
+            } else {
+                print("❌ Background image upload failed")
+            }
         }
 
         try? modelContext.save()
@@ -315,29 +328,94 @@ struct WelcomeSetupView: View {
         onComplete()
     }
 
+    // MARK: - Save to Supabase
     private func saveToSupabase(profileImageURL: String?, backgroundImageURL: String?) async {
         let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
         let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
-        guard let url = URL(string: "\(projectURL)/rest/v1/users?apple_user_id=eq.\(profile.appleUserID)") else { return }
+
         var body: [String: Any] = [
-            "display_name": displayName, "bio": bio, "hometown": hometown,
-            "favorite_ride": favoriteRide, "riding_since": ridingSince,
-            "preferred_ride_type": preferredRideType, "favorite_route": favoriteRoute,
-            "club": club,
-            "instagram_handle": instagramHandle.replacingOccurrences(of: "@", with: ""),
-            "tiktok_handle": tiktokHandle.replacingOccurrences(of: "@", with: ""),
-            "youtube_channel": youtubeChannel, "facebook_handle": facebookHandle
+            "display_name":        displayName,
+            "bio":                 bio,
+            "hometown":            hometown,
+            "favorite_ride":       favoriteRide,
+            "riding_since":        ridingSince,
+            "preferred_ride_type": preferredRideType,
+            "favorite_route":      favoriteRoute,
+            "club":                club,
+            "instagram_handle":    instagramHandle.replacingOccurrences(of: "@", with: ""),
+            "tiktok_handle":       tiktokHandle.replacingOccurrences(of: "@", with: ""),
+            "youtube_channel":     youtubeChannel,
+            "facebook_handle":     facebookHandle
         ]
         if let u = profileImageURL    { body["profile_image_url"]    = u }
         if let u = backgroundImageURL { body["background_image_url"] = u }
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(anonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: request)
-        print("✅ Profile saved to Supabase")
+
+        let bodyData = try? JSONSerialization.data(withJSONObject: body)
+
+        // Try 1 — PATCH by apple_user_id (lowercased to match Supabase)
+        if let url = URL(string: "\(projectURL)/rest/v1/users?apple_user_id=eq.\(profile.appleUserID.lowercased())") {
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(anonKey, forHTTPHeaderField: "apikey")
+            request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+            request.httpBody = bodyData
+
+            if let (data, response) = try? await URLSession.shared.data(for: request) {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if status == 200,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                   !json.isEmpty {
+                    print("✅ Profile saved to Supabase by apple_user_id")
+                    return
+                }
+                print("📡 PATCH by apple_user_id — status: \(status)")
+            }
+        }
+
+        // Try 2 — PATCH by email (fallback for email users)
+        let encodedEmail = profile.email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? profile.email
+        if let url = URL(string: "\(projectURL)/rest/v1/users?email=eq.\(encodedEmail)") {
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(anonKey, forHTTPHeaderField: "apikey")
+            request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+            request.httpBody = bodyData
+
+            if let (data, response) = try? await URLSession.shared.data(for: request) {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if status == 200,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                   !json.isEmpty {
+                    print("✅ Profile saved to Supabase by email")
+                    return
+                }
+                print("📡 PATCH by email — status: \(status)")
+            }
+        }
+
+        // Try 3 — INSERT if neither PATCH worked (brand new user)
+        if let url = URL(string: "\(projectURL)/rest/v1/users") {
+            body["apple_user_id"] = profile.appleUserID.lowercased()
+            body["email"] = profile.email
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(anonKey, forHTTPHeaderField: "apikey")
+            request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+            if let (_, response) = try? await URLSession.shared.data(for: request) {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                print("📡 INSERT new user — status: \(status)")
+                if status == 201 {
+                    print("✅ New user inserted to Supabase")
+                }
+            }
+        }
     }
 }

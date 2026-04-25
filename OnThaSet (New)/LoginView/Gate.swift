@@ -16,6 +16,7 @@ struct GatePage: View {
     @State private var showError = false
     @State private var errorMessage = ""
     @State private var isSigningIn = false
+    @State private var showEmailAuth = false
 
     var body: some View {
         ZStack {
@@ -52,14 +53,13 @@ struct GatePage: View {
 
                 Spacer()
 
-                // Loading indicator while signing in
                 if isSigningIn {
                     ProgressView()
                         .tint(.yellow)
                         .padding(.bottom, 8)
                 }
 
-                // SIGN IN WITH APPLE BUTTON
+                // SIGN IN WITH APPLE
                 SignInWithAppleButton(.signIn) { request in
                     request.requestedScopes = [.email, .fullName]
                 } onCompletion: { result in
@@ -77,7 +77,44 @@ struct GatePage: View {
                 .padding(.horizontal, 40)
                 .disabled(isSigningIn)
 
-                // GO BACK BUTTON
+                // DIVIDER
+                HStack {
+                    Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.3))
+                    Text("or").font(.caption).foregroundColor(.gray)
+                    Rectangle().frame(height: 1).foregroundColor(.gray.opacity(0.3))
+                }
+                .padding(.horizontal, 40)
+
+                // EMAIL / PASSWORD
+                Button(action: { showEmailAuth = true }) {
+                    HStack {
+                        Image(systemName: "envelope.fill")
+                        Text("Continue with Email")
+                            .font(.headline.bold())
+                    }
+                    .foregroundColor(.yellow)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.yellow, lineWidth: 2)
+                    )
+                }
+                .padding(.horizontal, 40)
+                .disabled(isSigningIn)
+
+                // DEMO MODE - App Review Access
+                Button(action: createDemoProfile) {
+                    Text("Explore Without Signing In")
+                        .font(.footnote)
+                        .foregroundColor(.gray)
+                        .underline()
+                }
+                .padding(.bottom, 4)
+
+                // GO BACK
                 Button(action: { }) {
                     Text("GO BACK")
                         .font(.headline.bold())
@@ -92,6 +129,10 @@ struct GatePage: View {
                 .padding(.horizontal, 40)
                 .padding(.bottom, 40)
             }
+        }
+        .sheet(isPresented: $showEmailAuth) {
+            EmailAuthView()
+                .environmentObject(authService)
         }
         .alert("Error", isPresented: $showError) {
             Button("OK") { }
@@ -116,18 +157,14 @@ struct GatePage: View {
         ].compactMap { $0 }.joined(separator: " ")
 
         isSigningIn = true
-        print("🔵 Signing in: \(userID)")
+        print("🔵 Apple Sign In userID: \(userID)")
 
         Task {
-            await saveUserToSupabase(
-                userID: userID,
-                email: email,
-                displayName: displayName
-            )
+            await saveUserToSupabase(userID: userID, email: email, displayName: displayName)
             await syncProfileFromSupabase(userID: userID, email: email)
             authService.loginWithApple(userID: userID, email: email)
             isSigningIn = false
-            print("✅ Sign in complete")
+            print("✅ Sign in complete — currentUser.id: \(authService.currentUser?.id ?? "nil")")
         }
     }
 
@@ -146,142 +183,140 @@ struct GatePage: View {
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let userData = json.first else {
-            // No remote profile — just ensure local exists
+            print("⚠️ No Supabase profile found for userID: \(userID) — saving locally")
             saveUserLocally(userID: userID, email: email)
             return
         }
 
-        // Fetch or create local profile
-        let descriptor = FetchDescriptor<UserProfile>(
-            predicate: #Predicate { $0.appleUserID == userID }
-        )
+        print("✅ Supabase profile found for: \(userID)")
+
+        let descriptor = FetchDescriptor<UserProfile>(predicate: #Predicate { $0.appleUserID == userID })
         let existing = (try? modelContext.fetch(descriptor)) ?? []
         let profile: UserProfile
-
-        // Check if Supabase has real profile data (display_name set = existing user)
         let supabaseDisplayName = (userData["display_name"] as? String ?? "").trimmingCharacters(in: .whitespaces)
         let isReturningUser = !supabaseDisplayName.isEmpty
 
         if let found = existing.first {
             profile = found
+            print("✅ Found existing local profile: \(profile.displayName)")
         } else {
             profile = UserProfile(appleUserID: userID, email: email)
             profile.hasCompletedSetup = isReturningUser
             modelContext.insert(profile)
+            print("✅ Created new local profile for: \(userID)")
         }
 
-        // Sync all fields from Supabase
-        profile.appleUserID     = userID
-        profile.email           = (userData["email"] as? String) ?? email
-        profile.displayName     = (userData["display_name"] as? String) ?? profile.displayName
-        profile.bio             = (userData["bio"] as? String) ?? ""
-        profile.hometown        = (userData["hometown"] as? String) ?? ""
-        profile.club            = (userData["club"] as? String) ?? ""
-        profile.favoriteRide    = (userData["favorite_ride"] as? String) ?? ""
-        profile.ridingSince     = (userData["riding_since"] as? String) ?? ""
+        profile.appleUserID       = userID
+        profile.email             = (userData["email"] as? String) ?? email
+        profile.displayName       = (userData["display_name"] as? String) ?? profile.displayName
+        profile.bio               = (userData["bio"] as? String) ?? ""
+        profile.hometown          = (userData["hometown"] as? String) ?? ""
+        profile.club              = (userData["club"] as? String) ?? ""
+        profile.favoriteRide      = (userData["favorite_ride"] as? String) ?? ""
+        profile.ridingSince       = (userData["riding_since"] as? String) ?? ""
         profile.preferredRideType = (userData["preferred_ride_type"] as? String) ?? ""
-        profile.favoriteRoute   = (userData["favorite_route"] as? String) ?? ""
-        profile.instagramHandle = (userData["instagram_handle"] as? String) ?? ""
-        profile.tiktokHandle    = (userData["tiktok_handle"] as? String) ?? ""
-        profile.youtubeChannel  = (userData["youtube_channel"] as? String) ?? ""
-        profile.facebookHandle  = (userData["facebook_handle"] as? String) ?? ""
-        profile.hasActiveSubscription = (userData["has_subscription"] as? Bool) ?? false
+        profile.favoriteRoute     = (userData["favorite_route"] as? String) ?? ""
+        profile.instagramHandle   = (userData["instagram_handle"] as? String) ?? ""
+        profile.tiktokHandle      = (userData["tiktok_handle"] as? String) ?? ""
+        profile.youtubeChannel    = (userData["youtube_channel"] as? String) ?? ""
+        profile.facebookHandle    = (userData["facebook_handle"] as? String) ?? ""
+        // Handle subscription — Supabase may return Bool or Int
+        let subValue = userData["has_subscription"]
+        if let boolVal = subValue as? Bool {
+            profile.hasActiveSubscription = boolVal
+        } else if let intVal = subValue as? Int {
+            profile.hasActiveSubscription = intVal == 1
+        } else {
+            profile.hasActiveSubscription = false
+        }
+        print("✅ has_subscription raw: \(String(describing: subValue)) → \(profile.hasActiveSubscription)")
 
-        // Download profile image from URL if we don't have local data
-        if profile.profileImageData == nil,
-           let urlStr = userData["profile_image_url"] as? String,
+        // Always download images fresh from Supabase (works across devices)
+        if let urlStr = userData["profile_image_url"] as? String,
            !urlStr.isEmpty,
            let imgURL = URL(string: urlStr),
            let (imgData, _) = try? await URLSession.shared.data(from: imgURL) {
             profile.profileImageData = imgData
+            profile.profileImageURL = urlStr
+            print("✅ Profile image downloaded from Supabase")
         }
 
-        // Download background image from URL if we don't have local data
-        if profile.backgroundImageData == nil,
-           let urlStr = userData["background_image_url"] as? String,
+        if let urlStr = userData["background_image_url"] as? String,
            !urlStr.isEmpty,
            let imgURL = URL(string: urlStr),
            let (imgData, _) = try? await URLSession.shared.data(from: imgURL) {
             profile.backgroundImageData = imgData
+            profile.backgroundImageURL = urlStr
+            print("✅ Background image downloaded from Supabase")
         }
 
         try? modelContext.save()
-        print("✅ Profile synced from Supabase for \(profile.displayName)")
 
         await MainActor.run {
             if isReturningUser {
-                // Has existing profile data — skip setup screen
                 UserDefaults.standard.set(true, forKey: "hasCompletedProfileSetup")
                 profile.hasCompletedSetup = true
-                print("✅ Returning user — skipping welcome setup")
+                print("✅ Returning user — setup complete")
             } else {
-                // Brand new user — show welcome setup
                 UserDefaults.standard.set(false, forKey: "hasCompletedProfileSetup")
                 profile.hasCompletedSetup = false
-                print("🆕 New user — showing welcome setup")
+                print("🆕 New user — showing setup")
             }
         }
     }
 
     // MARK: - Save to Supabase
 
-    private func saveUserToSupabase(
-        userID: String,
-        email: String,
-        displayName: String
-    ) async {
+    private func saveUserToSupabase(userID: String, email: String, displayName: String) async {
         do {
-            // Check if user already exists in Supabase
             let existing: [[String: String]] = try await supabase
-                .from("users")
-                .select("apple_user_id")
-                .eq("apple_user_id", value: userID)
-                .execute()
-                .value
-
+                .from("users").select("apple_user_id")
+                .eq("apple_user_id", value: userID).execute().value
             if existing.isEmpty {
-                // New user — insert into Supabase
-                try await supabase
-                    .from("users")
-                    .insert([
-                        "apple_user_id": userID,
-                        "email": email,
-                        "display_name": displayName
-                    ])
+                try await supabase.from("users")
+                    .insert(["apple_user_id": userID, "email": email, "display_name": displayName])
                     .execute()
-                print("✅ New user saved to Supabase")
-            } else {
-                print("✅ Existing user found in Supabase")
             }
-        } catch {
-            print("❌ Supabase user save error: \(error)")
-        }
+        } catch { print("❌ Supabase user save error: \(error)") }
     }
 
-    // MARK: - Save Locally (SwiftData)
+    // MARK: - Demo / Explore Without Signing In
+    private func createDemoProfile() {
+        let demoUserID = "demo-reviewer-user"
+        let demoEmail = "reviewer@apple.com"
+
+        let descriptor = FetchDescriptor<UserProfile>(
+            predicate: #Predicate { $0.appleUserID == demoUserID }
+        )
+        let existing = (try? modelContext.fetch(descriptor)) ?? []
+
+        if existing.isEmpty {
+            let profile = UserProfile(appleUserID: demoUserID, email: demoEmail)
+            profile.displayName = "Guest"
+            profile.hasCompletedSetup = true
+            modelContext.insert(profile)
+            try? modelContext.save()
+        } else {
+            existing.first?.hasCompletedSetup = true
+            try? modelContext.save()
+        }
+
+        authService.loginWithApple(userID: demoUserID, email: demoEmail)
+    }
+
+    // MARK: - Save Locally
 
     private func saveUserLocally(userID: String, email: String) {
-        let descriptor = FetchDescriptor<UserProfile>(
-            predicate: #Predicate { profile in
-                profile.appleUserID == userID
-            }
-        )
+        let descriptor = FetchDescriptor<UserProfile>(predicate: #Predicate { $0.appleUserID == userID })
         do {
             let existing = try modelContext.fetch(descriptor)
             if existing.isEmpty {
-                let newProfile = UserProfile(
-                    appleUserID: userID,
-                    email: email
-                )
+                let newProfile = UserProfile(appleUserID: userID, email: email)
                 modelContext.insert(newProfile)
                 try? modelContext.save()
-                print("✅ Profile saved locally")
-            } else {
-                print("✅ Local profile already exists")
+                print("✅ Profile saved locally for: \(userID)")
             }
-        } catch {
-            print("❌ Local profile error: \(error)")
-        }
+        } catch { print("❌ Local profile error: \(error)") }
     }
 }
 
