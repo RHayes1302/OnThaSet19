@@ -89,6 +89,7 @@ struct SupabaseAd: Codable, Identifiable {
     var latitude: Double?
     var longitude: Double?
     var advertiserPin: String?
+    var sponsored: Bool?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -109,6 +110,7 @@ struct SupabaseAd: Codable, Identifiable {
         case latitude
         case longitude
         case advertiserPin = "advertiser_pin"
+        case sponsored
     }
 }
 

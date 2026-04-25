@@ -451,32 +451,49 @@ struct AdminDashboardView: View {
 
         guard var ads = try? decoder.decode([SupabaseAd].self, from: data) else { return }
 
+        // FEATURE 1 — Bulk auto-expiry:
+        // One PATCH updates all active ads with paid_until < today in a single round-trip.
+        await bulkExpireOverdueAds(anonKey: anonKey, projectURL: projectURL)
+
+        // Mirror the change locally so the UI is consistent without a second fetch
         let now = Date()
         for i in ads.indices {
             if ads[i].status == "active",
+               !(ads[i].sponsored ?? false),
                let paidUntil = ads[i].paidUntil,
                paidUntil < now {
                 ads[i].status = "expired"
-                await expireAd(id: ads[i].id, anonKey: anonKey, projectURL: projectURL)
             }
         }
 
-        pendingAds      = ads.filter { $0.status == "pending" }
+        pendingAds      = ads.filter { $0.status == "pending" || $0.status == "approved" }
         activeAds       = ads.filter { $0.status == "active" }
         deactivatedAds  = ads.filter { $0.status == "rejected" || $0.status == "inactive" }
         expiredAds      = ads.filter { $0.status == "expired" }
     }
 
-    private func expireAd(id: UUID?, anonKey: String, projectURL: String) async {
-        guard let id = id,
-              let url = URL(string: "\(projectURL)/rest/v1/ads?id=eq.\(id.uuidString)") else { return }
+    /// Sends a single PATCH: status = "expired" for every active ad where paid_until < today.
+    /// Idempotent — safe to call on every admin load.
+    private func bulkExpireOverdueAds(anonKey: String, projectURL: String) async {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = dateFormatter.string(from: Date())
+
+        guard let url = URL(string: "\(projectURL)/rest/v1/ads?status=eq.active&paid_until=lt.\(today)&sponsored=eq.false") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(anonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["status": "expired"])
-        _ = try? await URLSession.shared.data(for: request)
+
+        if let (_, response) = try? await URLSession.shared.data(for: request),
+           let http = response as? HTTPURLResponse {
+            print(http.statusCode == 200 || http.statusCode == 204
+                  ? "✅ Bulk auto-expiry complete (HTTP \(http.statusCode))"
+                  : "⚠️ Bulk auto-expiry returned HTTP \(http.statusCode)")
+        }
     }
 
     private func loadEvents() async {
@@ -563,7 +580,12 @@ struct AdminDashboardView: View {
         await SupabaseManager.shared.fetchActiveAds()
     }
 
-    private func approveAd(_ ad: SupabaseAd) async { await updateAdStatus(ad, status: "active") }
+    private func approveAd(_ ad: SupabaseAd) async {
+        // Sponsored ads go live immediately — no payment needed
+        // Regular ads move to "approved" and wait for Stripe payment to set "active"
+        let newStatus = (ad.sponsored == true) ? "active" : "approved"
+        await updateAdStatus(ad, status: newStatus)
+    }
     private func rejectAd(_ ad: SupabaseAd) async { await updateAdStatus(ad, status: "rejected") }
 
     private func deleteAd(_ ad: SupabaseAd) async {
@@ -897,10 +919,13 @@ struct AdminAdCard: View {
     @State private var notes: String = ""
     @State private var showingNotes = false
     @State private var isSavingPayment = false
+    @State private var isSponsored: Bool = false
+    @State private var isSavingSponsored = false
 
     var statusColor: Color {
         switch ad.status {
         case "active": return .green
+        case "approved": return .blue
         case "rejected": return .red
         default: return .orange
         }
@@ -950,7 +975,16 @@ struct AdminAdCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(ad.businessName).font(.headline.bold()).foregroundColor(.white)
+                    HStack(spacing: 6) {
+                        Text(ad.businessName).font(.headline.bold()).foregroundColor(.white)
+                        if isSponsored {
+                            Text("⭐ SPONSORED")
+                                .font(.system(size: 8, weight: .black))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.yellow).cornerRadius(4)
+                        }
+                    }
                     Text(ad.tagline).font(.caption).foregroundColor(.gray)
                 }
                 Spacer()
@@ -995,6 +1029,32 @@ struct AdminAdCard: View {
 
             Divider().background(Color.gray.opacity(0.3))
 
+            // SPONSORED TOGGLE
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SPONSORED AD").font(.caption2.bold()).foregroundColor(.yellow)
+                    Text(isSponsored ? "Never expires — exempt from billing" : "Standard paid ad")
+                        .font(.system(size: 9)).foregroundColor(.gray)
+                }
+                Spacer()
+                if isSavingSponsored {
+                    ProgressView().tint(.yellow).scaleEffect(0.8)
+                } else {
+                    Toggle("", isOn: $isSponsored)
+                        .tint(.yellow)
+                        .onChange(of: isSponsored) { _, newValue in
+                            Task { await saveSponsored(newValue) }
+                        }
+                }
+            }
+            .padding(10)
+            .background(isSponsored ? Color.yellow.opacity(0.08) : Color.white.opacity(0.03))
+            .cornerRadius(10)
+            .overlay(RoundedRectangle(cornerRadius: 10)
+                .stroke(isSponsored ? Color.yellow.opacity(0.4) : Color.clear, lineWidth: 1))
+
+            Divider().background(Color.gray.opacity(0.3))
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("PAYMENT").font(.caption2.bold()).foregroundColor(.yellow)
                 HStack(spacing: 8) {
@@ -1011,7 +1071,7 @@ struct AdminAdCard: View {
                     Spacer()
                     Text(planPrice + "/mo").font(.caption.bold()).foregroundColor(planColor)
                 }
-                if paymentStatus == "paid" {
+                if !isSponsored && paymentStatus == "paid" {
                     Button(action: { showingDatePicker.toggle() }) {
                         HStack(spacing: 6) {
                             Image(systemName: "calendar").foregroundColor(.yellow).font(.caption)
@@ -1082,6 +1142,31 @@ struct AdminAdCard: View {
                         }
                     }
                 }
+
+                // FEATURE 3 — Renewal reminder button.
+                // Shown when paid_until is within 7 days (or already expired).
+                // Picks SMS if phone exists, falls back to email. Auto-selects billing type.
+                // Hidden for sponsored ads — they never expire.
+                if !isSponsored, let paidUntil = ad.paidUntil {
+                    let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: paidUntil).day ?? Int.min
+                    if daysLeft <= 7 {
+                        Button(action: { sendRenewalReminder() }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: daysLeft <= 0 ? "exclamationmark.triangle.fill" : "bell.badge.fill")
+                                    .font(.caption)
+                                Text(daysLeft <= 0
+                                     ? "SEND EXPIRED RENEWAL"
+                                     : "SEND RENEWAL REMINDER (\(daysLeft)d left)")
+                                    .font(.system(size: 9, weight: .black))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(daysLeft <= 0 ? Color.red.opacity(0.8) : Color.orange.opacity(0.85))
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                    }
+                }
             }
 
             if onApprove != nil || onReject != nil {
@@ -1095,10 +1180,34 @@ struct AdminAdCard: View {
                         }
                     }
                     if let onApprove = onApprove {
-                        Button(action: onApprove) {
-                            Text("APPROVE").font(.caption.bold()).foregroundColor(.black)
-                                .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                .background(Color.green).cornerRadius(8)
+                        Button(action: {
+                            onApprove()
+                            // For regular (non-sponsored) ads, immediately open the
+                            // payment link composer after approving so the flow is seamless.
+                            // Sponsored ads go live instantly — no payment needed.
+                            if !(ad.sponsored ?? false) {
+                                // Small delay so the status update lands first
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    let billingPref = ad.billingPreference ?? "recurring"
+                                    let isRecurring = billingPref == "recurring"
+                                    if ad.phone != nil {
+                                        sendText(recurring: isRecurring)
+                                    } else {
+                                        sendEmail(recurring: isRecurring)
+                                    }
+                                }
+                            }
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: isSponsored ? "checkmark.circle.fill" : "paperplane.fill")
+                                    .font(.caption)
+                                Text(isSponsored ? "APPROVE & GO LIVE" : "APPROVE & SEND LINK")
+                                    .font(.caption.bold())
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity).padding(.vertical, 10)
+                            .background(isSponsored ? Color.yellow : Color.green)
+                            .cornerRadius(8)
                         }
                     }
                 }
@@ -1121,6 +1230,7 @@ struct AdminAdCard: View {
             paymentStatus = ad.paymentStatus ?? "unpaid"
             notes = ad.notes ?? ""
             if let paid = ad.paidUntil { paidUntil = paid }
+            isSponsored = ad.sponsored ?? false
         }
     }
 
@@ -1132,11 +1242,48 @@ struct AdminAdCard: View {
         }
     }
 
+    // MARK: - Save Sponsored
+    private func saveSponsored(_ value: Bool) async {
+        isSavingSponsored = true
+        let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsdnFob3dmbHZneWF5dGhmemt4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ1NDQ4OTEsImV4cCI6MjA5MDEyMDg5MX0.mtw-bDXWk0U513symOwPR7AQuKH01Kykt55SEIaBtzI"
+        let projectURL = "https://zlvqhowflvgyaythfzkx.supabase.co"
+
+        guard let id = ad.id,
+              let url = URL(string: "\(projectURL)/rest/v1/ads?id=eq.\(id.uuidString)") else {
+            isSavingSponsored = false
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["sponsored": value])
+
+        if let (_, response) = try? await URLSession.shared.data(for: request),
+           let http = response as? HTTPURLResponse {
+            print(http.statusCode == 200 || http.statusCode == 204
+                  ? "✅ Sponsored set to \(value) for ad \(id)"
+                  : "⚠️ saveSponsored returned HTTP \(http.statusCode)")
+        }
+        isSavingSponsored = false
+        onRefresh?()
+    }
+
+    // MARK: - Stripe link with ad UUID appended (Feature 2)
+    /// Appends ?client_reference_id=<UUID> so the Stripe webhook can match back to this ad row.
+    private func stripeLink(base: String) -> String {
+        guard let id = ad.id else { return base }
+        return "\(base)?client_reference_id=\(id.uuidString)"
+    }
+
     private func sendText(recurring: Bool) {
         guard let phone = ad.phone, !phone.isEmpty else { return }
-        let link = recurring ? recurringLink : oneTimeLink
+        let link = stripeLink(base: recurring ? recurringLink : oneTimeLink)
         let billingType = recurring ? "monthly recurring" : "one-time"
-        let message = "Hi \(ad.businessName)! This is On Tha Set 🏍️ Your \(planBadge) ad has been approved! Complete your \(planPrice) \(billingType) payment to go live: \(link) — Reply here with any questions!"
+        let emailLine = ad.advertiserEmail.map { " ⚠️ Important: use \($0) as your email at checkout so we can activate your ad." } ?? ""
+        let message = "Hi \(ad.businessName)! This is On Tha Set 🏍️ Your \(planBadge) ad has been approved! Complete your \(planPrice) \(billingType) payment to go live: \(link)\(emailLine) Reply here with any questions!"
         let cleaned = phone.filter { $0.isNumber }
         let encoded = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "sms:\(cleaned)&body=\(encoded)") { UIApplication.shared.open(url) }
@@ -1144,13 +1291,78 @@ struct AdminAdCard: View {
 
     private func sendEmail(recurring: Bool) {
         guard let email = ad.advertiserEmail, !email.isEmpty else { return }
-        let link = recurring ? recurringLink : oneTimeLink
+        // Feature 2: client_reference_id lets the Stripe webhook match by ad UUID
+        let link = stripeLink(base: recurring ? recurringLink : oneTimeLink)
         let billingType = recurring ? "monthly recurring" : "one-time"
         let subject = "On Tha Set — Your Ad Has Been Approved!"
-        let body = "Hi \(ad.businessName),\n\nGreat news! Your On Tha Set advertisement has been approved.\n\nPlan: \(planBadge)\nPrice: \(planPrice)/mo (\(billingType))\n\nComplete your payment here:\n\(link)\n\nRide safe,\nOn Tha Set Team 🏍️"
+        let body = """
+Hi \(ad.businessName),
+
+Great news! Your On Tha Set advertisement has been approved.
+
+Plan: \(planBadge)
+Price: \(planPrice)/mo (\(billingType))
+
+Complete your payment here:
+\(link)
+
+⚠️ Important: when checking out, make sure to enter this exact email address:
+\(email)
+
+This is how we verify and activate your ad. Using a different email may delay activation.
+
+Ride safe,
+On Tha Set Team 🏍️
+"""
         let subjectEncoded = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let bodyEncoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "mailto:\(email)?subject=\(subjectEncoded)&body=\(bodyEncoded)") { UIApplication.shared.open(url) }
+    }
+
+    // MARK: - Renewal Reminder (Feature 3)
+    /// Opens SMS or email composer with a renewal nudge when paid_until is within 7 days.
+    /// Reuses sendText/sendEmail infrastructure — no push notification setup needed.
+    private func sendRenewalReminder() {
+        guard let paidUntil = ad.paidUntil else {
+            print("⚠️ No paid_until for \(ad.businessName)")
+            return
+        }
+        let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: paidUntil).day ?? 0
+        guard daysLeft <= 7 else { return }
+
+        let dateStr = paidUntil.formatted(date: .abbreviated, time: .omitted)
+        let isRecurring = (ad.billingPreference ?? "recurring") == "recurring"
+        let link = stripeLink(base: isRecurring ? recurringLink : oneTimeLink)
+
+        if let phone = ad.phone, !phone.isEmpty {
+            let message: String
+            let emailNote = ad.advertiserEmail.map { " ⚠️ Use \($0) at checkout." } ?? ""
+            if daysLeft <= 0 {
+                message = "Hi \(ad.businessName)! 🏍️ Your On Tha Set \(planBadge) ad has expired. Renew now to go back live: \(link)\(emailNote)"
+            } else {
+                message = "Hi \(ad.businessName)! 🏍️ Your On Tha Set \(planBadge) ad expires in \(daysLeft) day\(daysLeft == 1 ? "" : "s") (\(dateStr)). Renew here: \(link)\(emailNote)"
+            }
+            let cleaned = phone.filter { $0.isNumber }
+            let encoded = message.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            if let url = URL(string: "sms:\(cleaned)&body=\(encoded)") { UIApplication.shared.open(url) }
+            print("✅ Renewal SMS opened for \(ad.businessName) (\(daysLeft)d left)")
+
+        } else if let email = ad.advertiserEmail, !email.isEmpty {
+            let subject = daysLeft <= 0
+                ? "On Tha Set — Your Ad Has Expired"
+                : "On Tha Set — Your Ad Expires in \(daysLeft) Day\(daysLeft == 1 ? "" : "s")"
+            let emailWarning = "\n\n⚠️ Important: use \(email) at checkout so we can reactivate your ad immediately."
+            let body = daysLeft <= 0
+                ? "Hi \(ad.businessName),\n\nYour On Tha Set \(planBadge) ad has expired. Renew now to go back live:\n\(link)\(emailWarning)\n\nRide safe,\nOn Tha Set Team 🏍️"
+                : "Hi \(ad.businessName),\n\nYour On Tha Set \(planBadge) ad expires in \(daysLeft) day\(daysLeft == 1 ? "" : "s") on \(dateStr). Renew now to keep your spot:\n\(link)\(emailWarning)\n\nRide safe,\nOn Tha Set Team 🏍️"
+            let subjectEncoded = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            let bodyEncoded = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+            if let url = URL(string: "mailto:\(email)?subject=\(subjectEncoded)&body=\(bodyEncoded)") { UIApplication.shared.open(url) }
+            print("✅ Renewal email opened for \(ad.businessName) (\(daysLeft)d left)")
+
+        } else {
+            print("⚠️ No contact info for \(ad.businessName) — cannot send renewal reminder")
+        }
     }
 
     private func savePaymentStatus() async {
