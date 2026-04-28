@@ -108,12 +108,13 @@
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "Post up to 4 events per month to the On Tha Set riding community.",
-              "displayName" : "Monthly Membership",
+              "description" : "4 posts/month. Connect with riders in your community.",
+              "displayName" : "On Tha Set Monthly Membership",
               "locale" : "en_US"
             }
           ],
-          "productID" : "com.onthaset.monthlysubscription",
+          "productID" : "com.hayesenterprisellc.onthaset.membership.monthly",
+          "promotionalImageID" : "F9174C0A",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Monthly Event Posts",
           "subscriptionGroupID" : "FDB4E3FB",

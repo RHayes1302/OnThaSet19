@@ -269,7 +269,7 @@ struct PaymentSelectionView: View {
             if transaction != nil {
                 print("✅ Purchase completed: \(product.id)")
 
-                if product.id == "com.onthaset.monthlysubscription" {
+                if product.id == "com.hayesenterprisellc.onthaset.membership.monthly" {
                     if let profile = currentProfile {
                         // Link to existing profile
                         profile.hasActiveSubscription = true

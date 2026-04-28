@@ -14,9 +14,9 @@ typealias SKTransaction = StoreKit.Transaction
 
 @MainActor
 class StoreKitManager: ObservableObject {
-    // Product IDs
+    // Product IDs — must match App Store Connect exactly
     private let singlePostID = "com.onthaset.singlepost"
-    private let monthlySubscriptionID = "com.onthaset.monthlysubscription"
+    private let monthlySubscriptionID = "com.hayesenterprisellc.onthaset.membership.monthly"
     
     @Published var products: [Product] = []
     @Published var purchasedProductIDs: Set<String> = []
